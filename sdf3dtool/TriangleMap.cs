@@ -27,7 +27,7 @@ namespace SDFTool
         /// For any given model this represents the maximum tiles for each axis
         /// </summary>
         private readonly float m_denominator;
-        private readonly List<PreparedTriangle>[] m_triangles;
+        private readonly PreparedTriangle[][] m_triangles;
         private readonly float m_gridStep;
         private readonly Vector3 m_sceneMin;
 
@@ -52,7 +52,7 @@ namespace SDFTool
             m_gridy = (int)Math.Ceiling((sceneMax.Y - sceneMin.Y) / m_gridStep);
             m_gridz = (int)Math.Ceiling((sceneMax.Z - sceneMin.Z) / m_gridStep);
 
-            m_triangles = new List<PreparedTriangle>[m_gridx * m_gridy * m_gridz];
+            List<PreparedTriangle> [] triangles = new List<PreparedTriangle>[m_gridx * m_gridy * m_gridz];
 
             CellsUsed = 0;
             TriangleCount = triangleList.Count;
@@ -60,11 +60,11 @@ namespace SDFTool
             foreach (PreparedTriangle triangle in triangleList)
             {
                 //get tile coordinates for lower and upper triangle points
-                Vector3 lb = (triangle.LowerBoundary - m_sceneMin) / m_gridStep;
+                Vector3 lb = (triangle.LowerBound - m_sceneMin) / m_gridStep;
                 int fromx = (int)Math.Floor(lb.X);
                 int fromy = (int)Math.Floor(lb.Y);
                 int fromz = (int)Math.Floor(lb.Z);
-                Vector3 ub = (triangle.UpperBoundary - m_sceneMin) / m_gridStep;
+                Vector3 ub = (triangle.UpperBound - m_sceneMin) / m_gridStep;
                 int tox = (int)Math.Ceiling(ub.X);
                 int toy = (int)Math.Ceiling(ub.Y);
                 int toz = (int)Math.Ceiling(ub.Z);
@@ -79,19 +79,19 @@ namespace SDFTool
                             Vector3 tileStart = new Vector3(x, y, z) * m_gridStep + m_sceneMin;
                             Vector3 tileEnd = tileStart + new Vector3(m_gridStep, m_gridStep, m_gridStep);
 
-                            if (!triangle.IntersectsAABB(tileStart, tileEnd))
+                            if (!triangle.PlaneIntersectsAABB(tileStart, tileEnd))
                                 continue;
 
                             int index = x + y * m_gridx + z * m_gridx * m_gridy;
 
 
-                            if (m_triangles[index] == null)
+                            if (triangles[index] == null)
                             {
-                                m_triangles[index] = new List<PreparedTriangle>();
+                                triangles[index] = new List<PreparedTriangle>();
                                 CellsUsed++;
                             }
 
-                            m_triangles[index].Add(triangle);
+                            triangles[index].Add(triangle);
                             instances++;
                         }
 
@@ -100,6 +100,15 @@ namespace SDFTool
                 else
                     TriangleInstances += instances;
             }
+
+            m_triangles = new PreparedTriangle[triangles.Length][];
+
+            for (int i = 0; i < triangles.Length; i++)
+                if (triangles[i] != null)
+                {
+                    triangles[i].Sort((x, y) => -x.Area.CompareTo(y.Area));
+                    m_triangles[i] = triangles[i].ToArray();
+                }
 
             List<NibbleCell> nibble = new List<NibbleCell>();
 
@@ -116,6 +125,7 @@ namespace SDFTool
         public bool FindTriangles(Vector3 point, out float distance)
         {
             distance = float.MaxValue;
+            float distanceSqrd = float.MaxValue;
 
             Vector3 localPoint = (point - m_sceneMin) / m_gridStep;
             int pointx = (int)Math.Floor(localPoint.X);
@@ -125,19 +135,13 @@ namespace SDFTool
             HashSet<PreparedTriangle> triangles = new HashSet<PreparedTriangle>();
 
             float localDist = float.MaxValue;
+            Vector3 lb = Vector3.Zero;
+            Vector3 ub = Vector3.Zero;
 
             for (int i = 0; i < m_nibble.Length; i++)
             {
-                if (localDist != float.MaxValue)
-                {
-                    /*Vector3 center = new Vector3(x + 0.5f, y + 0.5f, z + 0.5f);
-
-                    if (Vector3.Distance(center, localPoint) > localDist)
-                        break;*/
-
-                    if (m_nibble[i].Length > localDist)
-                        break;
-                }
+                if (m_nibble[i].Length > localDist)
+                    break;
 
                 int x = pointx + m_nibble[i].X;
                 if (x < 0 || x >= m_gridx)
@@ -149,34 +153,39 @@ namespace SDFTool
                 if (z < 0 || z >= m_gridz)
                     continue;
 
-                
                 int index = x + y * m_gridx + z * m_gridx * m_gridy;
 
                 if (m_triangles[index] == null)
                     continue;
-
-              
 
                 foreach (var triangle in m_triangles[index])
                     if (!triangles.Contains(triangle))
                     {
                         if (distance != float.MaxValue)
                         {
-                            float distanceToSphere = (point - triangle.Center).LengthSquared() - triangle.RadiusSqrd;
-                            if (distanceToSphere > distance)
+                            if (!triangle.IntersectsAABB(lb, ub))
+                                continue;
+
+                            if (!triangle.IntersectsSphere(point, distance))
                                 continue;
                         }
+
                         float dist = triangle.DistanceSqrd(point);
-                        if (dist < distance)
+                        if (dist < distanceSqrd)
                         {
-                            distance = dist; // TODO: save triangle index to calculate color/texcoords if it wins
-                            localDist = (float)Math.Sqrt(dist) / m_gridStep + 1.73205080757f/ 2;// / 2; // cube diagonal
+                            distanceSqrd = dist;
+                            distance = (float)Math.Sqrt(dist); // TODO: save triangle index to calculate color/texcoords if it wins
+
+                            lb = point - new Vector3(distance, distance, distance);
+                            ub = point + new Vector3(distance, distance, distance);
                         }
                     }
+
+                if (distance != float.MaxValue)
+                    localDist = distance / m_gridStep + 1.73205080757f / 2;
             }
 
-            distance = (float)Math.Sqrt(distance);
-            return distance != float.MaxValue;// triangles.Count > 0;
+            return distance != float.MaxValue;
         }
     }
 }

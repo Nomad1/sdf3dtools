@@ -43,28 +43,24 @@ namespace SDFTool
 
             foreach (PreparedTriangle triangle in triangleList)
             {
-                xvalues.Add(Math.Abs(triangle.AC.X));
-                xvalues.Add(Math.Abs(triangle.BA.X));
-                xvalues.Add(Math.Abs(triangle.CB.X));
-                yvalues.Add(Math.Abs(triangle.AC.Y));
-                yvalues.Add(Math.Abs(triangle.BA.Y));
-                yvalues.Add(Math.Abs(triangle.CB.Y));
-                zvalues.Add(Math.Abs(triangle.AC.Z));
-                zvalues.Add(Math.Abs(triangle.BA.Z));
-                zvalues.Add(Math.Abs(triangle.CB.Z));
+                xvalues.Add(triangle.UpperBound.X - triangle.LowerBound.X);
+                yvalues.Add(triangle.UpperBound.Y - triangle.LowerBound.Y);
+                zvalues.Add(triangle.UpperBound.Z - triangle.LowerBound.Z);
             }
 
             xvalues.Sort();
             yvalues.Sort();
             zvalues.Sort();
 
-            Vector step = new Vector(xvalues[xvalues.Count / 2], yvalues[yvalues.Count / 2], zvalues[zvalues.Count / 2]);
+            // use median triangle size as a step
+            float step = Math.Min(Math.Min(xvalues[xvalues.Count / 2], yvalues[yvalues.Count / 2]), zvalues[zvalues.Count / 2]);
+            //Vector step = new Vector(xvalues[xvalues.Count / 2], yvalues[yvalues.Count / 2], zvalues[zvalues.Count / 2]) * 0.5f;
 
             Console.WriteLine("Bounding box: {0} - {1}, step {2}, triangles {3}, cells {4}, instances {5}", sceneMin, sceneMax, step, triangleMap.TriangleCount, triangleMap.CellsUsed, triangleMap.TriangleInstances);
 
-            int sx = (int)Math.Ceiling((sceneMax.X - sceneMin.X) / step.X) + 2;
-            int sy = (int)Math.Ceiling((sceneMax.Y - sceneMin.Y) / step.Y) + 2;
-            int sz = (int)Math.Ceiling((sceneMax.Z - sceneMin.Z) / step.Z) + 2;
+            int sx = (int)Math.Ceiling((sceneMax.X - sceneMin.X) / step) + 2;
+            int sy = (int)Math.Ceiling((sceneMax.Y - sceneMin.Y) / step) + 2;
+            int sz = (int)Math.Ceiling((sceneMax.Z - sceneMin.Z) / step) + 2;
 
             float maximumDistance = Vector.Distance(sceneMin, sceneMax);
 
@@ -81,7 +77,7 @@ namespace SDFTool
                 {
                     for (int ix = 0; ix < sx; ix++)
                     {
-                        Vector point = new Vector(ix * step.X + sceneMin.X, iy * step.Y + sceneMin.Y, iz * step.Z + sceneMin.Z);
+                        Vector point = new Vector(ix * step + sceneMin.X, iy * step + sceneMin.Y, iz * step + sceneMin.Z);
 
                         float distance = float.MaxValue;
 
