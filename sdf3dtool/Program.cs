@@ -33,9 +33,7 @@ namespace SDFTool
             Matrix4x4 matrix = Matrix4x4.Identity;
             List<PreparedTriangle> triangleList = new List<PreparedTriangle>();
 
-            Preprocess(scene, scene.RootNode, ref sceneMin, ref sceneMax, ref matrix, triangleList);
-
-            TriangleMap triangleMap = new TriangleMap(sceneMin, sceneMax, 32, triangleList);
+            Preprocess(scene, scene.RootNode, ref matrix, triangleList);
 
             List<float> xvalues = new List<float>();
             List<float> yvalues = new List<float>();
@@ -46,6 +44,13 @@ namespace SDFTool
                 xvalues.Add(triangle.UpperBound.X - triangle.LowerBound.X);
                 yvalues.Add(triangle.UpperBound.Y - triangle.LowerBound.Y);
                 zvalues.Add(triangle.UpperBound.Z - triangle.LowerBound.Z);
+
+                sceneMax.X = Math.Max(sceneMax.X, triangle.UpperBound.X);
+                sceneMax.Y = Math.Max(sceneMax.Y, triangle.UpperBound.Y);
+                sceneMax.Z = Math.Max(sceneMax.Z, triangle.UpperBound.Z);
+                sceneMin.X = Math.Min(sceneMin.X, triangle.LowerBound.X);
+                sceneMin.Y = Math.Min(sceneMin.Y, triangle.LowerBound.Y);
+                sceneMin.Z = Math.Min(sceneMin.Z, triangle.LowerBound.Z);
             }
 
             xvalues.Sort();
@@ -54,30 +59,38 @@ namespace SDFTool
 
             // use median triangle size as a step
             float step = Math.Min(Math.Min(xvalues[xvalues.Count / 2], yvalues[yvalues.Count / 2]), zvalues[zvalues.Count / 2]);
-            //Vector step = new Vector(xvalues[xvalues.Count / 2], yvalues[yvalues.Count / 2], zvalues[zvalues.Count / 2]) * 0.5f;
+
+            //creating tiled structure for faster triangle search
+            TriangleMap triangleMap = new TriangleMap(sceneMin, sceneMax, 32, triangleList);
 
             Console.WriteLine("Bounding box: {0} - {1}, step {2}, triangles {3}, cells {4}, instances {5}", sceneMin, sceneMax, step, triangleMap.TriangleCount, triangleMap.CellsUsed, triangleMap.TriangleInstances);
 
-            int sx = (int)Math.Ceiling((sceneMax.X - sceneMin.X) / step) + 2;
-            int sy = (int)Math.Ceiling((sceneMax.Y - sceneMin.Y) / step) + 2;
-            int sz = (int)Math.Ceiling((sceneMax.Z - sceneMin.Z) / step) + 2;
+            // number of extra pixels on the each size
+            int padding = 2;
+
+            int sx = (int)Math.Ceiling((sceneMax.X - sceneMin.X) / step) + padding * 2;
+            int sy = (int)Math.Ceiling((sceneMax.Y - sceneMin.Y) / step) + padding * 2;
+            int sz = (int)Math.Ceiling((sceneMax.Z - sceneMin.Z) / step) + padding * 2;
+
+            Vector paddingShift = new Vector(-step * padding);
 
             float maximumDistance = Vector.Distance(sceneMin, sceneMax);
 
-            Console.WriteLine("[{0}] File preprocessed. X: {1}, Y: {2}, Z: {3}", sw.Elapsed, sx, sy, sz);
-
             ushort[] data = new ushort[sx * sy * sz * 4];
+
+            Console.WriteLine("[{0}] File preprocessed. X: {1}, Y: {2}, Z: {3}", sw.Elapsed, sx, sy, sz);
 
             for (int iz = 0; iz < sz; iz++)
             {
                 Console.WriteLine("[{0}] Processing depth {1}", sw.Elapsed, iz);
+#if DEBUG
                 byte[] testData = new byte[sx * sy];
-
+#endif
                 for (int iy = 0; iy < sy; iy++)
                 {
                     for (int ix = 0; ix < sx; ix++)
                     {
-                        Vector point = new Vector(ix * step + sceneMin.X, iy * step + sceneMin.Y, iz * step + sceneMin.Z);
+                        Vector point = paddingShift + new Vector(ix * step + sceneMin.X, iy * step + sceneMin.Y, iz * step + sceneMin.Z);
 
                         float distance;
                         Vector triangleWeights;
@@ -87,60 +100,143 @@ namespace SDFTool
                         {
                             int index = (ix + iy * sx + iz * sx * sy) * 4;
 
+                            // the distance
                             data[index + 0] = (new HalfFloat(distance)).Data;
 
+                            float distancePercentage = distance / maximumDistance;
 
-                            testData[ix + iy * sx] = (byte)(128 + 4.0f * 255.0f * distance / maximumDistance);
+#if DEBUG
+                            // temporary test images. I had to scale the distance 4x to make them visible. Not sure it would work
+                            // for all the meshes
+                            testData[ix + iy * sx] = (byte)(128 + 4.0f * 255.0f * distancePercentage);
+#endif
+                            // don't store text coords for empty space. Note that right now "empty" means N% from the surface
+                            // it could be altered for different situations
+                            if (distance < 0.1f)
+                            {
+                                // Saved triangle data
+                                Tuple<Mesh, Face> tuple = (Tuple<Mesh, Face>)triangleData;
+                                Mesh mesh = tuple.Item1;
+                                Face face = tuple.Item2;
 
-                            Tuple<Mesh, Face> tuple = (Tuple<Mesh, Face>)triangleData;
-                            Mesh mesh = tuple.Item1;
-                            Face face = tuple.Item2;
+                                Vector3D tca = mesh.TextureCoordinateChannels[0][face.Indices[0]];
+                                Vector3D tcb = mesh.TextureCoordinateChannels[0][face.Indices[1]];
+                                Vector3D tcc = mesh.TextureCoordinateChannels[0][face.Indices[2]];
 
-                            Vector3D tca = mesh.TextureCoordinateChannels[0][face.Indices[0]];
-                            Vector3D tcb = mesh.TextureCoordinateChannels[0][face.Indices[1]];
-                            Vector3D tcc = mesh.TextureCoordinateChannels[0][face.Indices[2]];
+                                Vector3D tc = tca * triangleWeights.X + tcb * triangleWeights.Y + tcc * triangleWeights.Z;
 
-                            Vector tc = new Vector(
-                                tca.X * triangleWeights.X + tcb.X * triangleWeights.Y + tcc.X * triangleWeights.Z,
-                                tca.Y * triangleWeights.Y + tcb.Y * triangleWeights.Y + tcc.Y * triangleWeights.Z,
-                                tca.Z * triangleWeights.Z + tcb.Z * triangleWeights.Y + tcc.Z * triangleWeights.Z);
-
-                            data[index + 1] = (new HalfFloat(tc.X)).Data;
-                            data[index + 2] = (new HalfFloat(tc.Y)).Data;
+                                // texture coords
+                                data[index + 1] = (new HalfFloat(tc.X)).Data;
+                                data[index + 2] = (new HalfFloat(tc.Y)).Data;
+                            }
                         }
-
-                        /*
-                        float distance = triangles[0].DistanceSqrd(point);
-
-                        for (int i = 1; i < triangles.Length; i++)
-                        {
-                            float distanceToSphere = (point - triangles[i].Center).LengthSquared() - triangles[i].RadiusSqrd;
-                            if (distanceToSphere > distance)
-                                continue;
-
-                            float dist = triangles[i].DistanceSqrd(point);
-                            if (dist < distance)
-                                distance = dist; // TODO: save triangle index to calculate color/texcoords if it wins
-                        }
-                        */
-
 
                         // TODO: index + 1 and index + 2 should be texture coordinates. index + 3 is empty
                     }
                 }
 
+#if DEBUG
                 SaveGrayscaleBitmap(testData, sx, sy, Path.GetFileNameWithoutExtension(outFile) + "_" + iz);
+#endif
             }
 
             Console.WriteLine("[{0}] SDF finished, saving KTX", sw.Elapsed);
 
             SaveKTX(0x881A, sx, sy, sz, data, outFile);
 
-            Console.WriteLine("[{0}] KTX saved", sw.Elapsed);
+            Console.WriteLine("[{0}] KTX saved, saving boundary mesh", sw.Elapsed);
+
+            SaveBoxMesh(paddingShift, new Vector(sx, sy, sz) * step + sceneMin, outFile);
+
+            Console.WriteLine("[{0}] All done", sw.Elapsed);
 
             sw.Stop();
         }
 
+
+
+        private static void Preprocess(Scene scene, Node node, ref Matrix4x4 matrix, IList<PreparedTriangle> triangles)
+        {
+            Matrix4x4 prev = matrix;
+            matrix = prev * node.Transform;
+
+            if (node.HasMeshes)
+            {
+                foreach (int index in node.MeshIndices)
+                {
+                    Mesh mesh = scene.Meshes[index];
+                    
+                    for (int i = 0; i < mesh.FaceCount; i++)
+                    {
+                        Face face = mesh.Faces[i];
+
+                        if (face.HasIndices && face.IndexCount == 3) // only process triangles. Don't have a clue what to do with other primitives
+                        {
+                            Vector3D a = matrix * mesh.Vertices[face.Indices[0]];
+                            Vector3D b = matrix * mesh.Vertices[face.Indices[1]];
+                            Vector3D c = matrix * mesh.Vertices[face.Indices[2]];
+
+                            // This tuple will be used to get back the triangle and vertices when needed
+                            Tuple<Mesh, Face> data = new Tuple<Mesh, Face>(mesh, face);
+
+                            triangles.Add(new PreparedTriangle(new Vector(a.X, a.Y, a.Z), new Vector(b.X, b.Y, b.Z), new Vector(c.X, c.Y, c.Z), data));
+                        }
+                    }
+                }
+            }
+
+            for (int i = 0; i < node.ChildCount; i++)
+                Preprocess(scene, node.Children[i], ref matrix, triangles);
+
+            matrix = prev;
+        }
+
+        /// <summary>
+        /// Saves a 3d texture to KTX format with each pixel being a set of 4 ushort values
+        /// </summary>
+        /// <param name="format"></param>
+        /// <param name="width"></param>
+        /// <param name="height"></param>
+        /// <param name="depth"></param>
+        /// <param name="data"></param>
+        /// <param name="outfile"></param>
+        private static void SaveKTX(int format, int width, int height, int depth, ushort[] data, string outfile)
+        {
+            using (Stream stream = File.Open(outfile, FileMode.Create, FileAccess.Write, FileShare.None))
+            using (BinaryWriter writer = new BinaryWriter(stream))
+            {
+                writer.Write(new byte[] { 0xAB, 0x4B, 0x54, 0x58, 0x20, 0x31, 0x31, 0xBB, 0x0D, 0x0A, 0x1A, 0x0A });
+                writer.Write(0x04030201);
+                writer.Write(0x140B); // raw type
+                writer.Write(2); // raw size
+                writer.Write(format); // raw format
+                writer.Write(format); // format
+                writer.Write(0x1908); // rgba?
+                writer.Write(width);
+                writer.Write(height);
+                writer.Write(depth);
+                writer.Write(0); // elements
+                writer.Write(1); // faces
+                writer.Write(1); // mipmaps
+                writer.Write(0); // metadata
+
+                while (writer.BaseStream.Length < 64 + 0) // header + metadata size
+                    writer.Write(0);
+
+                writer.Write(data.Length * 2); // current mipmap size
+
+                for (int i = 0; i < data.Length; i++)
+                    writer.Write(data[i]);
+            }
+        }
+
+        /// <summary>
+        /// Saves a bitmap to 3 channel PPM format with all the channels being a grayscale
+        /// </summary>
+        /// <param name="data"></param>
+        /// <param name="imageWidth"></param>
+        /// <param name="imageHeight"></param>
+        /// <param name="outFile"></param>
         public static void SaveGrayscaleBitmap(byte[] data, int imageWidth, int imageHeight, string outFile)
         {
             string file = Path.GetFileNameWithoutExtension(outFile) + ".ppm";
@@ -168,89 +264,181 @@ namespace SDFTool
                     writer.WriteLine();
                 }
             }
-
         }
 
-
-        private static void Preprocess(Scene scene, Node node, ref Vector min, ref Vector max, ref Matrix4x4 matrix, IList<PreparedTriangle> triangles)
+        private struct Triangle
         {
-            Matrix4x4 prev = matrix;
-            matrix = prev * node.Transform;
+            public readonly ValueTuple<int,int,int>[] Points;
+            public readonly int[] Vertices;
 
-            if (node.HasMeshes)
+            public Triangle(int av, int atc, int an, int bv, int btc, int bn, int cb, int ctc, int cn)
             {
-                foreach (int index in node.MeshIndices)
+                Vertices = new int[3];
+                Points = new[] {
+                    new ValueTuple<int, int, int>(av - 1, atc - 1, an - 1),
+                    new ValueTuple<int, int, int>(bv - 1, btc - 1, bn - 1),
+                    new ValueTuple<int, int, int>(cb - 1, ctc - 1, cn - 1)
+                };
+            }
+        }
+
+        /// <summary>
+        /// Saves a box to Unigine .mesh format with lower bound having 0,0 tex coord and upper having 1,1
+        /// </summary>
+        /// <param name="lb"></param>
+        /// <param name="ub"></param>
+        /// <param name="outFile"></param>
+        public static void SaveBoxMesh(Vector lb, Vector ub, string outFile)
+        {
+            string file = Path.GetFileNameWithoutExtension(outFile) + ".mesh";
+            Console.WriteLine("Saving bounding box mesh to {0}", file);
+
+            Vector center = (lb + ub) / 2;
+            float radius = Vector.Distance(center, lb);
+
+            // 8 vertices
+            Vector[] vertices = {
+                lb,
+                new Vector(ub.X, lb.Y, lb.Z),
+                new Vector(lb.X, ub.Y, lb.Z),
+                new Vector(ub.X, ub.Y, lb.Z),
+                new Vector(lb.X, lb.Y, ub.Z),
+                new Vector(ub.X, lb.Y, ub.Z),
+                new Vector(lb.X, ub.Y, ub.Z),
+                ub
+            };
+
+            // 12 normals
+            Vector[] normals = {
+                new Vector(0.0f, 0.0f, -1.0f),
+                new Vector(0.0f, 0.0f, 1.0f),
+                new Vector(0.0f, -1.0f, 0.0f),
+                new Vector(1.0f, 0.0f, 0.0f),
+                new Vector(0.0f, 1.0f, 0.0f),
+                new Vector(-1.0f, 0.0f, 0.0f),
+            };
+            // 12 tex coords
+            Vector[] texcoords = {
+                new Vector(0.0f, 0.0f, 0.0f),
+                new Vector(1.0f, 0.0f, 0.0f),
+
+                new Vector(0.0f, 1.0f, 0.0f),
+                new Vector(1.0f, 1.0f, 0.0f),
+
+                new Vector(0.0f, 0.0f, 0.0f),
+                new Vector(1.0f, 0.0f, 0.0f),
+
+                new Vector(0.0f, 1.0f, 0.0f),
+                new Vector(1.0f, 1.0f, 0.0f),
+
+                new Vector(0.0f, 0.0f, 0.0f),
+                new Vector(1.0f, 0.0f, 0.0f),
+
+                new Vector(0.0f, 1.0f, 0.0f),
+                new Vector(1.0f, 1.0f, 0.0f)
+            };
+            // 12 triangles
+            Triangle[] faces = {
+                new Triangle(1, 10, 1, 3, 12, 1, 4, 11, 1),
+                new Triangle(4, 11, 1, 2, 9, 1, 1, 10, 1),
+
+                new Triangle(5, 9, 2, 6, 10, 2, 8, 12, 2),
+                new Triangle(8, 12, 2, 7, 11, 2, 5, 9, 2),
+
+                new Triangle(1, 5, 3, 2, 6, 3, 6, 8, 3),
+                new Triangle(6, 8, 3, 5, 7, 3, 1, 5, 3),
+
+                new Triangle(2, 1, 4, 4, 2, 4, 8, 4, 4),
+                new Triangle(8, 4, 4, 6, 3, 4, 2, 1, 4),
+
+                new Triangle(4, 5, 5, 3, 6, 5, 7, 8, 5),
+                new Triangle(7, 8, 5, 8, 7, 5, 4, 5, 5),
+
+                new Triangle(3, 1, 6, 1, 2, 6, 5, 4, 6),
+                new Triangle(5, 4, 6, 7, 3, 6, 3, 1, 6)
+            };
+
+            // here goes deduplication: every vertex should have unique normal and texcoord
+
+            List<ValueTuple<int, int, int>> vertexPairs = new List<ValueTuple<int, int, int>>();
+
+            for (int i = 0; i < faces.Length; i++)
+                for (int j = 0; j < faces[i].Points.Length; j++)
                 {
-                    Mesh mesh = scene.Meshes[index];
-                    for (int i = 0; i < mesh.VertexCount; i++)
+                    int index = vertexPairs.IndexOf(faces[i].Points[j]);
+                    if (index == -1)
                     {
-                        Vector3D tmp = matrix * mesh.Vertices[i];
-
-                        min.X = Math.Min(min.X, tmp.X);
-                        min.Y = Math.Min(min.Y, tmp.Y);
-                        min.Z = Math.Min(min.Z, tmp.Z);
-
-                        max.X = Math.Max(max.X, tmp.X);
-                        max.Y = Math.Max(max.Y, tmp.Y);
-                        max.Z = Math.Max(max.Z, tmp.Z);
+                        index = vertexPairs.Count;
+                        vertexPairs.Add(faces[i].Points[j]);
                     }
-
-                    for (int i = 0; i < mesh.FaceCount; i++)
-                    {
-                        Face face = mesh.Faces[i];
-
-                        if (face.HasIndices && face.IndexCount == 3) // only process triangles. Don't have a clue what to do with other primitives
-                        {
-                            Vector3D a = matrix * mesh.Vertices[face.Indices[0]];
-                            Vector3D b = matrix * mesh.Vertices[face.Indices[1]];
-                            Vector3D c = matrix * mesh.Vertices[face.Indices[2]];
-
-                            Tuple<Mesh, Face> data = new Tuple<Mesh, Face>(mesh, face);
-
-                            triangles.Add(new PreparedTriangle(new Vector(a.X, a.Y, a.Z), new Vector(b.X, b.Y, b.Z), new Vector(c.X, c.Y, c.Z), data));
-                        }
-                    }
+                    faces[i].Vertices[j] = index;
                 }
-            }
 
-            for (int i = 0; i < node.ChildCount; i++)
-            {
-                Preprocess(scene, node.Children[i], ref min, ref max, ref matrix, triangles);
-            }
-            matrix = prev;
-        }
-
-
-        private static void SaveKTX(int format, int width, int height, int depth, ushort[] data, string outfile)
-        {
-            using (Stream stream = File.Open(outfile, FileMode.Create, FileAccess.Write, FileShare.None))
+            using (Stream stream = File.Open(file, FileMode.Create, FileAccess.Write, FileShare.None))
             using (BinaryWriter writer = new BinaryWriter(stream))
             {
-                writer.Write(new byte[] { 0xAB, 0x4B, 0x54, 0x58, 0x20, 0x31, 0x31, 0xBB, 0x0D, 0x0A, 0x1A, 0x0A });
-                writer.Write(0x04030201);
-                writer.Write(0x140B); // raw type
-                writer.Write(2); // raw size
-                writer.Write(format); // raw format
-                writer.Write(format); // format
-                writer.Write(0x1908); // rgba?
-                writer.Write(width);
-                writer.Write(height);
-                writer.Write(depth);
-                writer.Write(0); // elements
-                writer.Write(1); // faces
-                writer.Write(1); // mipmaps
-                writer.Write(0); // metadata
+                writer.Write((int)(('m' | ('i' << 8) | ('0' << 16) | ('8' << 24))));
+                writer.Write(lb.X);
+                writer.Write(lb.Y);
+                writer.Write(lb.Z);
+                writer.Write(ub.X);
+                writer.Write(ub.Y);
+                writer.Write(ub.Z);
+                writer.Write(center.X);
+                writer.Write(center.Y);
+                writer.Write(center.Z);
+                writer.Write(radius);
 
-                while (writer.BaseStream.Length < 64 + 0) // header + metadata size
-                    writer.Write(0);
+                writer.Write(1); // surfaces
 
-                writer.Write(data.Length); // current mipmap size
+                string surfaceName = "box";
 
-                for (int i = 0; i < data.Length; i++)
-                    writer.Write(data[i]);
+                writer.Write(surfaceName.Length + 1);
+                writer.Write(surfaceName.ToCharArray());
+                writer.Write((byte)0);
+                writer.Write(lb.X);
+                writer.Write(lb.Y);
+                writer.Write(lb.Z);
+                writer.Write(ub.X);
+                writer.Write(ub.Y);
+                writer.Write(ub.Z);
+                writer.Write(center.X);
+                writer.Write(center.Y);
+                writer.Write(center.Z);
+                writer.Write(radius);
+
+                writer.Write(vertexPairs.Count); // vertices
+
+                for (int i = 0; i < vertexPairs.Count; i++)
+                {
+                    writer.Write(vertices[vertexPairs[i].Item1].X);
+                    writer.Write(vertices[vertexPairs[i].Item1].Y);
+                    writer.Write(vertices[vertexPairs[i].Item1].Z);
+                    writer.Write((ushort)((normals[vertexPairs[i].Item3].X / 2.0f + 0.5f) * 65535.0f));
+                    writer.Write((ushort)((normals[vertexPairs[i].Item3].Y / 2.0f + 0.5f) * 65535.0f));
+                    writer.Write((ushort)((normals[vertexPairs[i].Item3].Z / 2.0f + 0.5f) * 65535.0f));
+                }
+
+                writer.Write(vertexPairs.Count); // texture coordinates
+
+                for (int i = 0; i < vertexPairs.Count; i++)
+                {
+                    writer.Write(texcoords[vertexPairs[i].Item2].X);
+                    writer.Write(texcoords[vertexPairs[i].Item2].Y);
+                }
+
+                writer.Write(0); // second texcoords
+
+                writer.Write(faces.Length); // triangles
+
+                for (int i = 0; i < faces.Length; i++)
+                {
+                    writer.Write((ushort)faces[i].Vertices[0]);
+                    writer.Write((ushort)faces[i].Vertices[1]);
+                    writer.Write((ushort)faces[i].Vertices[2]);
+                }
             }
         }
-
 
         static void Main(string[] args)
         {
