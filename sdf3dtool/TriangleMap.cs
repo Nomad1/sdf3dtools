@@ -122,9 +122,12 @@ namespace SDFTool
             m_nibble = nibble.ToArray();
         }
 
-        public bool FindTriangles(Vector3 point, out float distance)
+        public bool FindTriangles(Vector3 point, out float distance, out Vector3 weights, out object data)
         {
             distance = float.MaxValue;
+            data = null;
+            weights = Vector3.Zero;
+
             float distanceSqrd = float.MaxValue;
 
             Vector3 localPoint = (point - m_sceneMin) / m_gridStep;
@@ -137,6 +140,7 @@ namespace SDFTool
             float localDist = float.MaxValue;
             Vector3 lb = Vector3.Zero;
             Vector3 ub = Vector3.Zero;
+            Vector3 w;
 
             for (int i = 0; i < m_nibble.Length; i++)
             {
@@ -170,7 +174,7 @@ namespace SDFTool
                                 continue;
                         }
 
-                        float dist = triangle.DistanceSqrd(point);
+                        float dist = triangle.DistanceSqrd(point, out w);
                         if (dist < distanceSqrd)
                         {
                             distanceSqrd = dist;
@@ -178,6 +182,9 @@ namespace SDFTool
 
                             lb = point - new Vector3(distance, distance, distance);
                             ub = point + new Vector3(distance, distance, distance);
+
+                            w = weights;
+                            data = triangle.Data;
                         }
                     }
 

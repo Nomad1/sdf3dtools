@@ -27,7 +27,7 @@ namespace SDFTool
         private readonly float NormalLengthSquared;
         private readonly Vector3 BAxNormal, CBxNormal, ACxNormal;
 
-        public readonly object Parent;
+        public readonly object Data;
 
         public readonly Vector3 LowerBound;
         public readonly Vector3 UpperBound;
@@ -37,7 +37,7 @@ namespace SDFTool
             A = a;
             B = b;
             C = c;
-            Parent = parent;
+            Data = parent;
 
             Vector3 ba = b - a;
             Vector3 cb = c - b;
@@ -75,7 +75,7 @@ namespace SDFTool
             return Math.Max(Math.Min(value, max), min);
         }
 
-        public float DistanceSqrd(Vector3 p)
+        public float DistanceSqrd(Vector3 p, out Vector3 weights)
         {
             Vector3 pa = p - A;
             Vector3 pb = p - B;
@@ -88,6 +88,7 @@ namespace SDFTool
             float areaCB = Vector3.Dot(CBxNormal, pb);
             float areaAC = Area - areaBA - areaCB; // /*Vector3.Dot(ACxNormal, pc)*/
 
+            weights = new Vector3(areaBA, areaCB, areaAC);
 
             // inside/outside test    
             return (Math.Sign(areaBA) +

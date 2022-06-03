@@ -79,9 +79,35 @@ namespace SDFTool
                     {
                         Vector point = new Vector(ix * step + sceneMin.X, iy * step + sceneMin.Y, iz * step + sceneMin.Z);
 
-                        float distance = float.MaxValue;
+                        float distance;
+                        Vector triangleWeights;
+                        object triangleData;
 
-                        triangleMap.FindTriangles(point, out distance);
+                        if (triangleMap.FindTriangles(point, out distance, out triangleWeights, out triangleData))
+                        {
+                            int index = (ix + iy * sx + iz * sx * sy) * 4;
+
+                            data[index + 0] = (new HalfFloat(distance)).Data;
+
+
+                            testData[ix + iy * sx] = (byte)(128 + 4.0f * 255.0f * distance / maximumDistance);
+
+                            Tuple<Mesh, Face> tuple = (Tuple<Mesh, Face>)triangleData;
+                            Mesh mesh = tuple.Item1;
+                            Face face = tuple.Item2;
+
+                            Vector3D tca = mesh.TextureCoordinateChannels[0][face.Indices[0]];
+                            Vector3D tcb = mesh.TextureCoordinateChannels[0][face.Indices[1]];
+                            Vector3D tcc = mesh.TextureCoordinateChannels[0][face.Indices[2]];
+
+                            Vector tc = new Vector(
+                                tca.X * triangleWeights.X + tcb.X * triangleWeights.Y + tcc.X * triangleWeights.Z,
+                                tca.Y * triangleWeights.Y + tcb.Y * triangleWeights.Y + tcc.Y * triangleWeights.Z,
+                                tca.Z * triangleWeights.Z + tcb.Z * triangleWeights.Y + tcc.Z * triangleWeights.Z);
+
+                            data[index + 1] = (new HalfFloat(tc.X)).Data;
+                            data[index + 2] = (new HalfFloat(tc.Y)).Data;
+                        }
 
                         /*
                         float distance = triangles[0].DistanceSqrd(point);
@@ -97,12 +123,7 @@ namespace SDFTool
                                 distance = dist; // TODO: save triangle index to calculate color/texcoords if it wins
                         }
                         */
-                        int index = (ix + iy * sx + iz * sx * sy) * 4;
 
-                        data[index + 0] = (new HalfFloat(distance)).Data;
-
-
-                        testData[ix + iy * sx] = (byte)(128 + 4.0f * 255.0f * distance / maximumDistance);
 
                         // TODO: index + 1 and index + 2 should be texture coordinates. index + 3 is empty
                     }
@@ -183,7 +204,10 @@ namespace SDFTool
                             Vector3D a = matrix * mesh.Vertices[face.Indices[0]];
                             Vector3D b = matrix * mesh.Vertices[face.Indices[1]];
                             Vector3D c = matrix * mesh.Vertices[face.Indices[2]];
-                            triangles.Add(new PreparedTriangle(new Vector(a.X, a.Y, a.Z), new Vector(b.X, b.Y, b.Z), new Vector(c.X, c.Y, c.Z), face));
+
+                            Tuple<Mesh, Face> data = new Tuple<Mesh, Face>(mesh, face);
+
+                            triangles.Add(new PreparedTriangle(new Vector(a.X, a.Y, a.Z), new Vector(b.X, b.Y, b.Z), new Vector(c.X, c.Y, c.Z), data));
                         }
                     }
                 }
