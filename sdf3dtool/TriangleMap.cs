@@ -127,8 +127,7 @@ namespace SDFTool
             distance = float.MaxValue;
             data = null;
             weights = Vector3.Zero;
-
-            float distanceSqrd = float.MaxValue;
+            int sign = 1;
 
             Vector3 localPoint = (point - m_sceneMin) / m_gridStep;
             int pointx = (int)Math.Floor(localPoint.X);
@@ -174,16 +173,17 @@ namespace SDFTool
                                 continue;
                         }
 
-                        float dist = triangle.DistanceSqrd(point, out w);
-                        if (dist < distanceSqrd)
+                        int nsign;
+                        float dist = triangle.Distance(point, out w, out nsign);
+                        if (dist <= distance)
                         {
-                            distanceSqrd = dist;
-                            distance = (float)Math.Sqrt(dist); // TODO: save triangle index to calculate color/texcoords if it wins
+                            distance = dist;
 
                             lb = point - new Vector3(distance, distance, distance);
                             ub = point + new Vector3(distance, distance, distance);
 
-                            w = weights;
+                            weights = w;
+                            sign = nsign;
                             data = triangle.Data;
                         }
                     }
@@ -192,6 +192,7 @@ namespace SDFTool
                     localDist = distance / m_gridStep + 1.73205080757f / 2;
             }
 
+            distance *= sign;
             return distance != float.MaxValue;
         }
     }
