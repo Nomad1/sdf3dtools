@@ -57,6 +57,40 @@ namespace SDFTool
         }
     }
 
+    public class PseudoNormal
+    {
+        private Vector3 m_value;
+        private int m_count = 0;
+
+        public Vector3 Value
+        {
+            get { return m_value; }
+        }
+        public int Count
+        {
+            get { return m_count; }
+        }
+
+        public void Add(Vector3 value)
+        {
+            m_value += value;
+            m_count++;
+        }
+    }
+
+    internal enum TriangleRegion
+    {
+        Center = 0,
+        EdgeAB = 1,
+        EdgeBC = 2,
+        EdgeCA = 3,
+        VertexA = 4,
+        VertexB = 5,
+        VertexC = 6,
+
+        Max = 7
+    } 
+
     internal class PreparedTriangle
     {
         // Vertices
@@ -77,38 +111,37 @@ namespace SDFTool
         //private readonly Vector3 ACNorm;
 
         // Triangle area
+        private readonly float NormalLength;
         public readonly float Area;
 
-        private readonly float NormalLength;
-
         public readonly object Data;
-        public readonly Vector3i[] Vertices;
-        public readonly VectorPair[] Edges;
-        public readonly Vector3[] PseudoNormals;
+        public readonly PseudoNormal[] PseudoNormals;
 
         public readonly Vector3 LowerBound;
         public readonly Vector3 UpperBound;
 
-        public PreparedTriangle(Vector3 a, Vector3 b, Vector3 c, object parent, Vector3i[] vertices, VectorPair[] edges)
+        public PreparedTriangle(Vector3 a, Vector3 b, Vector3 c,
+            object parent, PseudoNormal[] normals)
         {
             A = a;
             B = b;
             C = c;
             Data = parent;
-            Vertices = vertices;
-            Edges = edges;
-            PseudoNormals = new Vector3[7];
+            PseudoNormals = normals;
 
             Normal = Vector3.Cross(b - a, c - a);
-            NormalLength = Normal.Length();
+
+            Area = Normal.LengthSquared();
+            NormalLength = Math.Max((float)Math.Sqrt(Area), 1.0e-20f);
             Normal /= NormalLength;
-            PseudoNormals[0] = Normal;
-            PseudoNormals[1] = Normal;
-            PseudoNormals[2] = Normal;
-            PseudoNormals[3] = Normal;
-            PseudoNormals[4] = (float)Math.Acos(Vector3.Dot(Vector3.Normalize(b - a), Vector3.Normalize(c - a))) * Normal;
-            PseudoNormals[5] = (float)Math.Acos(Vector3.Dot(Vector3.Normalize(a - b), Vector3.Normalize(c - b))) * Normal;
-            PseudoNormals[6] = (float)Math.Acos(Vector3.Dot(Vector3.Normalize(b - c), Vector3.Normalize(a - c))) * Normal;
+            Area /= 2;
+            PseudoNormals[(int)TriangleRegion.Center].Add(Normal);
+            PseudoNormals[(int)TriangleRegion.EdgeAB].Add(Normal * (float)Math.PI);
+            PseudoNormals[(int)TriangleRegion.EdgeBC].Add(Normal * (float)Math.PI);
+            PseudoNormals[(int)TriangleRegion.EdgeCA].Add(Normal * (float)Math.PI);
+            PseudoNormals[(int)TriangleRegion.VertexA].Add((float)Math.Acos(Vector3.Dot(b - a, c - a) / ((b - a).Length() * (c - a).Length())) * Normal);
+            PseudoNormals[(int)TriangleRegion.VertexB].Add((float)Math.Acos(Vector3.Dot(a - b, c - b) / ((a - b).Length() * (c - b).Length())) * Normal);
+            PseudoNormals[(int)TriangleRegion.VertexC].Add((float)Math.Acos(Vector3.Dot(a - c, b - c) / ((a - c).Length() * (b - c).Length())) * Normal);
             //float normalLength = (float)Math.Sqrt(NormalLengthSquared);
             //Area = normalLength * 0.5f;
             //NormNormal = Normal / normalLength;
@@ -126,22 +159,12 @@ namespace SDFTool
             UpperBound.Z = Math.Max(Math.Max(a.Z, b.Z), c.Z);
         }
 
-        public void UpdateNeighbors(IDictionary<Vector3i, Vector3> vertexNormals, IDictionary<VectorPair, Vector3> edgeNormals)
-        {
-            PseudoNormals[0] = edgeNormals[Edges[0]];
-            PseudoNormals[1] = edgeNormals[Edges[1]];
-            PseudoNormals[2] = edgeNormals[Edges[2]];
-            PseudoNormals[4] = vertexNormals[Vertices[0]];
-            PseudoNormals[5] = vertexNormals[Vertices[1]];
-            PseudoNormals[6] = vertexNormals[Vertices[2]];
-        }
-
         private static float Clamp(float value, float min, float max)
         {
             return Math.Max(Math.Min(value, max), min);
         }
 
-        public float Distance(Vector3 p, out Vector3 weights, out int sign)
+        public float DistanceToPoint(Vector3 p, out Vector3 weights, out Vector3 pp, out int sign)
         {
             Vector3 pa = p - A;
             Vector3 pb = p - B;
@@ -155,8 +178,7 @@ namespace SDFTool
             float w = 1.0f - u - v;
             weights = new Vector3(u, v, w);
 
-            int edge;
-            Vector3 pp;
+            TriangleRegion region;
             float len;
 
             if (Math.Sign(w) + Math.Sign(u) + Math.Sign(v) < 2.0f)
@@ -175,21 +197,21 @@ namespace SDFTool
 
                 if ((u > 0 && lna < lnc) || (v > 0 && lna < lnb))
                 {
-                    edge = nab <= 0 ? 4 : nab >= 1 ? 5 : 0;
+                    region = nab <= 0 ? TriangleRegion.VertexA : nab >= 1 ? TriangleRegion.VertexB : TriangleRegion.EdgeAB;
                     weights = new Vector3(1.0f - nab, nab, 0);
                     pp = ppa;
                     len = lna;
                 }
                 else if ((u > 0 && lna > lnc) || (w > 0 && lnc < lnb))
                 {
-                    edge = nca <= 0 ? 6 : nca >= 1 ? 4 : 2;
+                    region = nca <= 0 ? TriangleRegion.VertexC : nca >= 1 ? TriangleRegion.VertexA : TriangleRegion.EdgeCA;
                     weights = new Vector3(nca, 0, 1.0f - nca);
                     pp = ppc;
                     len = lnc;
                 }
                 else if ((v > 0 && lna > lnb) || (w > 0 && lnc > lnb))
                 {
-                    edge = nbc <= 0 ? 5 : nbc >= 1 ? 6 : 1;
+                    region = nbc <= 0 ? TriangleRegion.VertexB : nbc >= 1 ? TriangleRegion.VertexC : TriangleRegion.EdgeBC;
                     weights = new Vector3(0, 1.0f - nbc, nbc);
                     pp = ppb;
                     len = lnb;
@@ -197,17 +219,18 @@ namespace SDFTool
                 else // never happens
                 {
                     sign = 0;
+                    pp = Vector3.Zero;
                     return float.MaxValue;
                 }
             }
             else
             {
                 pp = A * weights.X + B * weights.Y + C * weights.Z;
-                edge = 3;
+                region = TriangleRegion.Center;
                 len = Vector3.DistanceSquared(p, pp);
             }
 
-            float dot = Vector3.Dot(PseudoNormals[edge], p - pp);
+            float dot = Vector3.Dot(PseudoNormals[(int)region].Value, p - pp);
 
             sign = Math.Sign(dot);
 
@@ -231,6 +254,104 @@ namespace SDFTool
                     :
                     // 1 face
                     Vector3.Dot(Normal, pa) * Vector3.Dot(Normal, pa) / NormalLengthSquared;*/
+        }
+
+        public float DistanceToPoint(Vector3 p, out Vector3 weights, out Vector3 pp)
+        {
+            Vector3 pa = p - A;
+            Vector3 pb = p - B;
+            Vector3 pc = p - C;
+            Vector3 ba = B - A;
+            Vector3 cb = C - B;
+            Vector3 ac = A - C;
+
+            float u = Vector3.Dot(Vector3.Cross(cb, pb), Normal) / NormalLength;
+            float v = Vector3.Dot(Vector3.Cross(ac, pc), Normal) / NormalLength;
+            float w = Vector3.Dot(Vector3.Cross(ba, pa), Normal) / NormalLength;
+            //1.0f - u - v;
+            weights = new Vector3(u, v, w);
+
+            float len;
+
+            if (Math.Sign(w) + Math.Sign(u) + Math.Sign(v) < 2.0f)
+            {
+                float nab = Clamp(Vector3.Dot(ba, pa) / ba.LengthSquared(), 0.0f, 1.0f);
+                float nbc = Clamp(Vector3.Dot(cb, pb) / cb.LengthSquared(), 0.0f, 1.0f);
+                float nca = Clamp(Vector3.Dot(ac, pc) / ac.LengthSquared(), 0.0f, 1.0f);
+
+                Vector3 ppa = ba * nab + A;
+                Vector3 ppb = cb * nbc + B;
+                Vector3 ppc = ac * nca + C;
+
+                float lna = (ppa - p).LengthSquared();
+                float lnb = (ppb - p).LengthSquared();
+                float lnc = (ppc - p).LengthSquared();
+
+                if ((u > 0 && lna < lnc) || (v > 0 && lna < lnb))
+                {
+                    weights = new Vector3(1.0f - nab, nab, 0);
+                    pp = ppa;
+                    len = lna;
+                }
+                else if ((u > 0 && lna > lnc) || (w > 0 && lnc < lnb))
+                {
+                    weights = new Vector3(nca, 0, 1.0f - nca);
+                    pp = ppc;
+                    len = lnc;
+                }
+                else if ((v > 0 && lna > lnb) || (w > 0 && lnc > lnb))
+                {
+                    weights = new Vector3(0, 1.0f - nbc, nbc);
+                    pp = ppb;
+                    len = lnb;
+                }
+                else // never happens
+                {
+                    pp = Vector3.Zero;
+                    return float.MaxValue;
+                }
+            }
+            else
+            {
+                pp = A * weights.X + B * weights.Y + C * weights.Z;
+                len = Vector3.DistanceSquared(p, pp);
+            }
+
+            return (float)Math.Sqrt(len);
+        }
+
+        public bool IntersectsRay(Vector3 p, Vector3 dir)
+        {
+            Vector3 ba = B - A;
+            Vector3 ca = C - A;
+
+            Vector3 h = Vector3.Cross(dir, ca);
+            float proj = Vector3.Dot(ba, h);
+
+            if (Math.Abs(proj) < float.Epsilon)
+            {
+                return false;  // ray is parallel to triangle
+            }
+
+            Vector3 pa = p - A;
+            float u = Vector3.Dot(pa, h) / proj;
+
+            if (u < 0.0 || u > 1.0)
+            {
+                return false;
+            }
+
+            Vector3 q = Vector3.Cross(pa, ba);
+            float v = Vector3.Dot(dir, q) / proj;
+
+            if (v < 0.0f || u + v > 1.0f)
+            {
+                return false;
+            }
+
+            float t = Vector3.Dot(ca, q) / proj;
+
+            return t >= 0.0f;
         }
 
         public bool IntersectsAABB(Vector3 lb, Vector3 ub)

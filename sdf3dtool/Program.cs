@@ -24,12 +24,13 @@ namespace SDFTool
             Console.WriteLine("[{0}] Processing file {1}", sw.Elapsed, fileName);
 
             AssimpContext importer = new AssimpContext();
-            importer.SetConfig(new NormalSmoothingAngleConfig(66.0f));
+            importer.SetConfig(new ACSeparateBackfaceCullConfig(false));
+            //importer.SetConfig(new NormalSmoothingAngleConfig(66.0f));
             Scene scene = importer.ImportFile(fileName, PostProcessPreset.TargetRealTimeMaximumQuality);
 
             Console.WriteLine("[{0}] File loaded", sw.Elapsed);
 
-            float scale = 1.0f; // 10000
+            float scale = 1;
 
             Vector sceneMin = new Vector(float.MaxValue, float.MaxValue, float.MaxValue);
             Vector sceneMax = new Vector(float.MinValue, float.MinValue, float.MinValue);
@@ -120,6 +121,9 @@ namespace SDFTool
                             testData[(ix + iy * sx) * 4] = distancePercentage > 0 ? (byte)(1024.0f * distancePercentage) : (byte)0;
                             testData[(ix + iy * sx) * 4 + 1] = distancePercentage < 0 ? (byte)(-1024.0f * distancePercentage) : (byte)0;
 #endif
+
+                           
+
                             // don't store tex coords for empty space. Note that right now "empty" means N% from the surface
                             // it could be altered for different situations
                             //if (distancePercentage < 0.1f)
@@ -133,9 +137,7 @@ namespace SDFTool
                                 Vector3D tcb = mesh.TextureCoordinateChannels[0][face.Indices[1]];
                                 Vector3D tcc = mesh.TextureCoordinateChannels[0][face.Indices[2]];
 
-                                Vector3D tc =
-                                //new Vector3D(ix / (float)sx, iy / (float)sz, 0);
-                                tca* triangleWeights.X + tcb * triangleWeights.Y + tcc * triangleWeights.Z;
+                                Vector3D tc = tca* triangleWeights.X + tcb * triangleWeights.Y + tcc * triangleWeights.Z;
 
                                 // texture coords
                                 data[index + 1] = (new HalfFloat(tc.X)).Data;
@@ -173,15 +175,12 @@ namespace SDFTool
 
             if (node.HasMeshes)
             {
+                Dictionary<VectorPair, PseudoNormal> edgeNormals = new Dictionary<VectorPair, PseudoNormal>();
+                Dictionary<Vector3i, PseudoNormal> vertexNormals = new Dictionary<Vector3i, PseudoNormal>();
+
                 foreach (int index in node.MeshIndices)
                 {
                     Mesh mesh = scene.Meshes[index];
-
-                    List<PreparedTriangle> triangles = new List<PreparedTriangle>(mesh.FaceCount);
-
-                    Dictionary<VectorPair, Vector> edgeNormals = new Dictionary<VectorPair, Vector>();
-
-                    Dictionary<Vector3i, Vector> vertexNormals = new Dictionary<Vector3i, Vector>();
 
                     for (int i = 0; i < mesh.FaceCount; i++)
                     {
@@ -197,10 +196,19 @@ namespace SDFTool
                             Vector b = new Vector(vb.X, vb.Y, vb.Z);
                             Vector c = new Vector(vc.X, vc.Y, vc.Z);
 
+#if !USE_INT_COORDS
                             int multiplier = 10000;
+                            //Vector3i ia = new Vector3i((int)(mesh.Vertices[face.Indices[0]].X * multiplier), (int)(mesh.Vertices[face.Indices[0]].Y * multiplier), (int)(mesh.Vertices[face.Indices[0]].Z * multiplier));
+                            //Vector3i ib = new Vector3i((int)(mesh.Vertices[face.Indices[1]].X * multiplier), (int)(mesh.Vertices[face.Indices[1]].Y * multiplier), (int)(mesh.Vertices[face.Indices[1]].Z * multiplier));
+                            //Vector3i ic = new Vector3i((int)(mesh.Vertices[face.Indices[2]].X * multiplier), (int)(mesh.Vertices[face.Indices[2]].Y * multiplier), (int)(mesh.Vertices[face.Indices[2]].Z * multiplier));
                             Vector3i ia = new Vector3i((int)(mesh.Vertices[face.Indices[0]].X * multiplier), (int)(mesh.Vertices[face.Indices[0]].Y * multiplier), (int)(mesh.Vertices[face.Indices[0]].Z * multiplier));
                             Vector3i ib = new Vector3i((int)(mesh.Vertices[face.Indices[1]].X * multiplier), (int)(mesh.Vertices[face.Indices[1]].Y * multiplier), (int)(mesh.Vertices[face.Indices[1]].Z * multiplier));
                             Vector3i ic = new Vector3i((int)(mesh.Vertices[face.Indices[2]].X * multiplier), (int)(mesh.Vertices[face.Indices[2]].Y * multiplier), (int)(mesh.Vertices[face.Indices[2]].Z * multiplier));
+#else
+                            Vector3i ia = new Vector3i(face.Indices[0], 0, 0);
+                            Vector3i ib = new Vector3i(face.Indices[1], 0, 0);
+                            Vector3i ic = new Vector3i(face.Indices[2], 0, 0);
+#endif
                             VectorPair edgeab = new VectorPair(ia, ib);
                             VectorPair edgebc = new VectorPair(ib, ic);
                             VectorPair edgeca = new VectorPair(ic, ia);
@@ -209,55 +217,49 @@ namespace SDFTool
                             // This tuple will be used to get back the triangle and vertices when needed
                             Tuple<Mesh, Face> data = new Tuple<Mesh, Face>(mesh, face);
 
-                            PreparedTriangle triangle = new PreparedTriangle(a, b, c, data, new Vector3i[] { ia, ib, ic }, new VectorPair[] { edgeab, edgebc, edgeca });
-                            triangles.Add(triangle);
+                            PreparedTriangle triangle = new PreparedTriangle(a, b, c, data,
+                                new PseudoNormal[]
+                                {
+                                    new PseudoNormal(),
+                                    GetValue(edgeNormals, edgeab),
+                                    GetValue(edgeNormals, edgebc),
+                                    GetValue(edgeNormals, edgeca),
+                                    GetValue(vertexNormals, ia),
+                                    GetValue(vertexNormals, ib),
+                                    GetValue(vertexNormals, ic)
+                                });
                             allTriangles.Add(triangle);
 
-                            if (!vertexNormals.ContainsKey(ia))
-                                vertexNormals.Add(ia, triangle.PseudoNormals[4]);
-                            else
-                                vertexNormals[ia] += triangle.PseudoNormals[4];
-
-                            if (!vertexNormals.ContainsKey(ib))
-                                vertexNormals.Add(ib, triangle.PseudoNormals[5]);
-                            else
-                                vertexNormals[ib] += triangle.PseudoNormals[5];
-
-                            if (!vertexNormals.ContainsKey(ic))
-                                vertexNormals.Add(ic, triangle.PseudoNormals[6]);
-                            else
-                                vertexNormals[ic] += triangle.PseudoNormals[6];
-
-                            if (!edgeNormals.ContainsKey(edgeab))
-                                edgeNormals.Add(edgeab, triangle.PseudoNormals[0]);
-                            else
-                                edgeNormals[edgeab] += triangle.PseudoNormals[0];
-
-                            if (!edgeNormals.ContainsKey(edgebc))
-                                edgeNormals.Add(edgebc, triangle.PseudoNormals[1]);
-                            else
-                                edgeNormals[edgebc] += triangle.PseudoNormals[1];
-
-                            if (!edgeNormals.ContainsKey(edgeca))
-                                edgeNormals.Add(edgeca, triangle.PseudoNormals[2]);
-                            else
-                                edgeNormals[edgeca] += triangle.PseudoNormals[2];
                         }
+                        else
+                            Console.WriteLine("Not a triangle!");
                     }
-
-                    
-                    foreach (PreparedTriangle triangle in triangles)
-                    {
-                        triangle.UpdateNeighbors(vertexNormals, edgeNormals);
-                    }
-
                 }
+
+                foreach (var pair in edgeNormals)
+                    if (pair.Value.Count == 1)
+                    {
+                        Console.WriteLine("Edge {0} has only 1 triangle!", pair.Key);
+                        pair.Value.Add(pair.Value.Value);
+                    } else
+                        if (pair.Value.Count > 2)
+                        Console.WriteLine("Edge {0} has {1} triangles!", pair.Key, pair.Value.Count);
             }
 
             for (int i = 0; i < node.ChildCount; i++)
                 Preprocess(scene, node.Children[i], ref matrix, allTriangles);
 
             matrix = prev;
+        }
+
+        private static PseudoNormal GetValue<K>(IDictionary<K, PseudoNormal> dictionary, K key)
+        {
+            PseudoNormal value;
+            if (dictionary.TryGetValue(key, out value))
+                return value;
+
+            dictionary[key] = value = new PseudoNormal();
+            return value;
         }
 
         /// <summary>

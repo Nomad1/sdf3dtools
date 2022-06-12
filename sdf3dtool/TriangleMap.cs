@@ -127,7 +127,8 @@ namespace SDFTool
             distance = float.MaxValue;
             data = null;
             weights = Vector3.Zero;
-            int sign = 1;
+            Vector3 result = Vector3.Zero;
+            int sign;
 
             Vector3 localPoint = (point - m_sceneMin) / m_gridStep;
             int pointx = (int)Math.Floor(localPoint.X);
@@ -139,12 +140,15 @@ namespace SDFTool
             float localDist = float.MaxValue;
             Vector3 lb = Vector3.Zero;
             Vector3 ub = Vector3.Zero;
-            Vector3 w;
 
+            // we check farther grid cells with each step
+            // stopping when a point found with a distance smaller than all remaining cells
             for (int i = 0; i < m_nibble.Length; i++)
             {
                 if (m_nibble[i].Length > localDist)
                     break;
+
+                // check is cells are outside of the grid
 
                 int x = pointx + m_nibble[i].X;
                 if (x < 0 || x >= m_gridx)
@@ -158,12 +162,15 @@ namespace SDFTool
 
                 int index = x + y * m_gridx + z * m_gridx * m_gridy;
 
+                // empty cells
                 if (m_triangles[index] == null)
                     continue;
 
                 foreach (var triangle in m_triangles[index])
                     if (!triangles.Contains(triangle))
                     {
+                        triangles.Add(triangle);
+
                         if (distance != float.MaxValue)
                         {
                             if (!triangle.IntersectsAABB(lb, ub))
@@ -173,8 +180,14 @@ namespace SDFTool
                                 continue;
                         }
 
-                        int nsign;
-                        float dist = triangle.Distance(point, out w, out nsign);
+                        Vector3 tempWeights;
+                        Vector3 tempResult;
+#if PSEUDO_SIGN
+                        int tempSign;
+                        float dist = triangle.DistanceToPoint(point, out tempWeights, out tempResult, out tempSign);
+#else
+                        float dist = triangle.DistanceToPoint(point, out tempWeights, out tempResult);
+#endif
                         if (dist <= distance)
                         {
                             distance = dist;
@@ -182,8 +195,11 @@ namespace SDFTool
                             lb = point - new Vector3(distance, distance, distance);
                             ub = point + new Vector3(distance, distance, distance);
 
-                            weights = w;
-                            sign = nsign;
+                            weights = tempWeights;
+#if PSEUDO_SIGN
+                            sign = tempSign;
+#endif
+                            result = tempResult;
                             data = triangle.Data;
                         }
                     }
@@ -192,9 +208,114 @@ namespace SDFTool
                     localDist = distance / m_gridStep + 1.73205080757f / 2;
             }
 
+            sign = CountIntersections(point, Vector3.Normalize(point - result)) % 2 == 0 ? 1 : -1;
+
             distance *= sign;
             return distance != float.MaxValue;
         }
+
+        public int CountIntersections(Vector3 point, Vector3 dir)
+        {
+            int count = 0;
+            Vector3 idir = new Vector3(1.0f / dir.X, 1.0f / dir.Y, 1.0f / dir.Z);
+            Vector3 localPoint = (point - m_sceneMin) / m_gridStep;
+            Vector3 localEndPoint = localPoint + new Vector3(Math.Sign(dir.X) * m_gridx, Math.Sign(dir.Y) * m_gridy, Math.Sign(dir.Z) * m_gridz);
+
+            int fromx = Math.Max((int)Math.Floor(Math.Min(localPoint.X, localEndPoint.X)), 0);
+            int fromy = Math.Max((int)Math.Floor(Math.Min(localPoint.Y, localEndPoint.Y)), 0);
+            int fromz = Math.Max((int)Math.Floor(Math.Min(localPoint.Z, localEndPoint.Z)), 0);
+            int tox = Math.Min((int)Math.Ceiling(Math.Max(localPoint.X, localEndPoint.X)), m_gridx);
+            int toy = Math.Min((int)Math.Ceiling(Math.Max(localPoint.Y, localEndPoint.Y)), m_gridy);
+            int toz = Math.Min((int)Math.Ceiling(Math.Max(localPoint.Z, localEndPoint.Z)), m_gridz);
+
+            // TODO: 3dda for selecting needed grids, not a bruteforce
+
+            HashSet<PreparedTriangle> triangles = new HashSet<PreparedTriangle>();
+
+            for (int z = fromz; z < toz; z++)
+                for (int y = fromy; y < toy; y++)
+                    for (int x = fromx; x < tox; x++)
+                    {
+                        int index = x + y * m_gridx + z * m_gridx * m_gridy;
+
+                        // empty cells
+                        if (m_triangles[index] == null)
+                            continue;
+
+                        if (!iRayBoundIntersection(new Vector3(x, y, z), new Vector3(x + 1, y + 1, z + 1), localPoint, idir))
+                            continue;
+
+                        foreach (var triangle in m_triangles[index])
+                            if (!triangles.Contains(triangle))
+                            {
+                                triangles.Add(triangle);
+
+                                if (triangle.IntersectsRay(point, dir))
+                                    count++;
+                            }
+                    }
+
+            return count;
+        }
+
+        /// <summary>
+        /// Determines Ray-Box intersection. (c) Amy Williams, Steve Barrus, R. Keith Morley, and Peter Shirley
+        /// </summary>
+        /// <param name="lb">The lower box boundary</param>
+        /// <param name="ub">The upper box boundary</param>
+        /// <param name="point">Origin point</param>
+        /// <param name="dir">Inverted direction vector</param>
+        /// <returns></returns>
+        public static bool iRayBoundIntersection(Vector3 lb, Vector3 ub, Vector3 point, Vector3 idir)
+        {
+            float tmin, tmax, tymin, tymax;
+
+            if (idir.X >= 0)
+            {
+                tmin = (lb.X - point.X) * idir.X;
+                tmax = (ub.X - point.X) * idir.X;
+            }
+            else
+            {
+                tmin = (ub.X - point.X) * idir.X;
+                tmax = (lb.X - point.X) * idir.X;
+            }
+
+            if (idir.Y >= 0)
+            {
+                tymin = (lb.Y - point.Y) * idir.Y;
+                tymax = (ub.Y - point.Y) * idir.Y;
+            }
+            else
+            {
+                tymin = (ub.Y - point.Y) * idir.Y;
+                tymax = (lb.Y - point.Y) * idir.Y;
+            }
+
+            if (tmin > tymax || tmax < tymin)
+                return false;
+
+            if (tmin < tymin)
+                tmin = tymin;
+            if (tmax > tymax)
+                tmax = tymax;
+
+            float tzmin, tzmax;
+
+            if (idir.Z >= 0)
+            {
+                tzmin = (lb.Z - point.Z) * idir.Z;
+                tzmax = (ub.Z - point.Z) * idir.Z;
+            }
+            else
+            {
+                tzmin = (ub.Z - point.Z) * idir.Z;
+                tzmax = (lb.Z - point.Z) * idir.Z;
+            }
+
+            return (tmin <= tzmax) && (tmax >= tzmin);
+        }
+
     }
 }
 
