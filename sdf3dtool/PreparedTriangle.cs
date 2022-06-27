@@ -102,32 +102,32 @@ namespace SDFTool
 
         // Normal
         private readonly Vector3 Normal;
-        //private readonly Vector3 NormNormal;
         // Distance from A to (0,0,0)
         private readonly float ZeroDistance;
-
-        //private readonly Vector3 BANorm;
-        //private readonly Vector3 CBNorm;
-        //private readonly Vector3 ACNorm;
 
         // Triangle area
         private readonly float NormalLength;
         public readonly float Area;
 
         public readonly object Data;
+#if USE_PSEUDO_NORMALS
         public readonly PseudoNormal[] PseudoNormals;
+#endif
 
         public readonly Vector3 LowerBound;
         public readonly Vector3 UpperBound;
 
         public PreparedTriangle(Vector3 a, Vector3 b, Vector3 c,
-            object parent, PseudoNormal[] normals)
+            object parent
+#if USE_PSEUDO_NORMALS
+            , PseudoNormal[] normals
+#endif
+            )
         {
             A = a;
             B = b;
             C = c;
             Data = parent;
-            PseudoNormals = normals;
 
             Normal = Vector3.Cross(b - a, c - a);
 
@@ -135,6 +135,8 @@ namespace SDFTool
             NormalLength = Math.Max((float)Math.Sqrt(Area), 1.0e-20f);
             Normal /= NormalLength;
             Area /= 2;
+#if USE_PSEUDO_NORMALS
+            PseudoNormals = normals;
             PseudoNormals[(int)TriangleRegion.Center].Add(Normal);
             PseudoNormals[(int)TriangleRegion.EdgeAB].Add(Normal * (float)Math.PI);
             PseudoNormals[(int)TriangleRegion.EdgeBC].Add(Normal * (float)Math.PI);
@@ -142,10 +144,7 @@ namespace SDFTool
             PseudoNormals[(int)TriangleRegion.VertexA].Add((float)Math.Acos(Vector3.Dot(b - a, c - a) / ((b - a).Length() * (c - a).Length())) * Normal);
             PseudoNormals[(int)TriangleRegion.VertexB].Add((float)Math.Acos(Vector3.Dot(a - b, c - b) / ((a - b).Length() * (c - b).Length())) * Normal);
             PseudoNormals[(int)TriangleRegion.VertexC].Add((float)Math.Acos(Vector3.Dot(a - c, b - c) / ((a - c).Length() * (b - c).Length())) * Normal);
-            //float normalLength = (float)Math.Sqrt(NormalLengthSquared);
-            //Area = normalLength * 0.5f;
-            //NormNormal = Normal / normalLength;
-
+#endif
             ZeroDistance = Vector3.Dot(Normal, A);
 
             Center = (a + b + c) / 3;
@@ -164,6 +163,7 @@ namespace SDFTool
             return Math.Max(Math.Min(value, max), min);
         }
 
+#if USE_PSEUDO_NORMALS
         public float DistanceToPoint(Vector3 p, out Vector3 weights, out Vector3 pp, out int sign)
         {
             Vector3 pa = p - A;
@@ -220,6 +220,8 @@ namespace SDFTool
                 {
                     sign = 0;
                     pp = Vector3.Zero;
+                    if (weights.X < 0 || weights.Y < 0 || weights.Z < 0 || weights.X > 1 || weights.Y > 1 || weights.Z > 1)
+                        Console.WriteLine("Weights are invalid!");
                     return float.MaxValue;
                 }
             }
@@ -230,32 +232,16 @@ namespace SDFTool
                 len = Vector3.DistanceSquared(p, pp);
             }
 
+            if (weights.X < 0 || weights.Y < 0 || weights.Z < 0 || weights.X > 1 || weights.Y > 1 || weights.Z > 1)
+                Console.WriteLine("Weights are invalid!");
+
             float dot = Vector3.Dot(PseudoNormals[(int)region].Value, p - pp);
 
             sign = Math.Sign(dot);
 
-            return (float)Math.Sqrt(len);
-            /*
-
-            weights = new Vector3(u, v, 1.0f - u - v);
-
-            sign = 1;// Math.Sign(dot);
-
-            // inside/outside test
-            return (Math.Sign(w) +
-                    Math.Sign(u) +
-                    Math.Sign(v) < 2.0f)
-                    ?
-                    // 3 edges
-                    Math.Min(Math.Min(
-                    (ba * Clamp(Vector3.Dot(BANorm, pa), 0.0f, 1.0f) - pa).LengthSquared(),
-                    (cb * Clamp(Vector3.Dot(CBNorm, pb), 0.0f, 1.0f) - pb).LengthSquared()),
-                    (ac * Clamp(Vector3.Dot(ACNorm, pc), 0.0f, 1.0f) - pc).LengthSquared())
-                    :
-                    // 1 face
-                    Vector3.Dot(Normal, pa) * Vector3.Dot(Normal, pa) / NormalLengthSquared;*/
+            return (float)Math.Sqrt(len);            
         }
-
+#endif
         public float DistanceToPoint(Vector3 p, out Vector3 weights, out Vector3 pp)
         {
             Vector3 pa = p - A;
@@ -287,19 +273,19 @@ namespace SDFTool
                 float lnb = (ppb - p).LengthSquared();
                 float lnc = (ppc - p).LengthSquared();
 
-                if ((u > 0 && lna < lnc) || (v > 0 && lna < lnb))
+                if (lna <= lnc && lna <= lnb)
                 {
                     weights = new Vector3(1.0f - nab, nab, 0);
                     pp = ppa;
                     len = lna;
                 }
-                else if ((u > 0 && lna > lnc) || (w > 0 && lnc < lnb))
+                else if (lnc <= lna && lnc <= lnb)
                 {
                     weights = new Vector3(nca, 0, 1.0f - nca);
                     pp = ppc;
                     len = lnc;
                 }
-                else if ((v > 0 && lna > lnb) || (w > 0 && lnc > lnb))
+                else if (lnb <= lna && lnb <= lnc)
                 {
                     weights = new Vector3(0, 1.0f - nbc, nbc);
                     pp = ppb;
@@ -308,6 +294,9 @@ namespace SDFTool
                 else // never happens
                 {
                     pp = Vector3.Zero;
+                    if (weights.X < 0 || weights.Y < 0 || weights.Z < 0 || weights.X > 1 || weights.Y > 1 || weights.Z > 1)
+                        Console.WriteLine("Weights are invalid!");
+
                     return float.MaxValue;
                 }
             }
@@ -316,6 +305,8 @@ namespace SDFTool
                 pp = A * weights.X + B * weights.Y + C * weights.Z;
                 len = Vector3.DistanceSquared(p, pp);
             }
+            if (weights.X < 0 || weights.Y < 0 || weights.Z < 0 || weights.X > 1 || weights.Y > 1 || weights.Z > 1)
+                Console.WriteLine("Weights are invalid!");
 
             return (float)Math.Sqrt(len);
         }

@@ -41,6 +41,11 @@ namespace SDFTool
         public readonly int TriangleInstances;
         public readonly int CellsUsed;
 
+        public Vector3i GridSize
+        {
+            get { return new Vector3i(m_gridx, m_gridy, m_gridz); }
+        }
+
         public TriangleMap(Vector3 sceneMin, Vector3 sceneMax, float denominator, IList<PreparedTriangle> triangleList)
         {
             m_denominator = denominator;
@@ -148,6 +153,16 @@ namespace SDFTool
                 if (m_nibble[i].Length > localDist)
                     break;
 
+#if !DONT_USE_EARLY_EXIT
+                if (i >= 27 && localDist == float.MaxValue) // if this cell is solitary, meaning all neighbors are empty, we can just put in an average distance
+                {
+                    distance = m_nibble[i].Length * m_gridStep;
+                    result = m_sceneMin + new Vector3(pointx + 0.5f, pointy + 0.5f, pointz + 0.5f) * m_gridStep;
+                    //if (weights.X < 0 || weights.Y < 0 || weights.Z < 0 || weights.X > 1 || weights.Y > 1 || weights.Z > 1)
+                    //Console.WriteLine("Weights are invalid!");
+                    return false;
+                }
+#endif
                 // check is cells are outside of the grid
 
                 int x = pointx + m_nibble[i].X;
@@ -188,7 +203,7 @@ namespace SDFTool
 #else
                         float dist = triangle.DistanceToPoint(point, out tempWeights, out tempResult);
 #endif
-                        if (dist <= distance)
+                        if (dist < distance && dist != float.MaxValue)
                         {
                             distance = dist;
 
@@ -196,6 +211,8 @@ namespace SDFTool
                             ub = point + new Vector3(distance, distance, distance);
 
                             weights = tempWeights;
+                            //if (weights.X < 0 || weights.Y < 0 || weights.Z < 0 || weights.X > 1 || weights.Y > 1 || weights.Z > 1)
+                                //Console.WriteLine("Weights are invalid!");
 #if PSEUDO_SIGN
                             sign = tempSign;
 #endif
@@ -211,7 +228,11 @@ namespace SDFTool
             sign = CountIntersections(point, Vector3.Normalize(point - result)) % 2 == 0 ? 1 : -1;
 
             distance *= sign;
-            return distance != float.MaxValue;
+
+            //if (weights.X < 0 || weights.Y < 0 || weights.Z < 0 || weights.X > 1 || weights.Y > 1 || weights.Z > 1)
+                //Console.WriteLine("Weights are invalid!");
+
+            return true;
         }
 
         public int CountIntersections(Vector3 point, Vector3 dir)

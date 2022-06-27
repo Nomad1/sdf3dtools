@@ -44,6 +44,9 @@
     <Compile Include="HalfFloat.cs" />
     <Compile Include="PreparedTriangle.cs" />
     <Compile Include="TriangleMap.cs" />
+    <Compile Include="MeshGenerator.cs" />
+    <Compile Include="Helper.cs" />
+    <Compile Include="Texture3D.cs" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Properties\" />
