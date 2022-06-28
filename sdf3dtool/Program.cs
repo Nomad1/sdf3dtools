@@ -94,13 +94,11 @@ namespace SDFTool
 
             Console.WriteLine("[{0}] File preprocessed. X: {1}, Y: {2}, Z: {3}", sw.Elapsed, sx, sy, sz);
 
-            ConcurrentDictionary<Vector3i, float> emptyCells = new ConcurrentDictionary<Vector3i, float>();
-            ConcurrentDictionary<Vector3i, float> usedCells = new ConcurrentDictionary<Vector3i, float>();
+            //ConcurrentDictionary<Vector3i, float> cells = new ConcurrentDictionary<Vector3i, float>();
 
-            float emptyCellCheckDistance = cellSize * step * (float)Math.Sqrt(2) * 0.5f;
+            float emptyCellCheckDistance = step * 0.5f / maximumDistance;// * 0.5f;// (float)Math.Sqrt(2) * 0.5f;// cellSize * step * 0.05f;// * (float)Math.Sqrt(2) * 0.5f;
 
-            Parallel.For(0, sz, (iz) =>
-            //for (int iz = 0; iz < sz; iz++)
+            Iterate(0, sz, (iz) =>
             {
                 Console.WriteLine("[{0}] Processing depth {1}", sw.Elapsed, iz);
 
@@ -122,20 +120,12 @@ namespace SDFTool
 
                         bool empty = !triangleMap.FindTriangles(point, out distance, out triangleWeights, out triangleData);
 
-                        empty = /*triangleData == null ||*/ Math.Abs(distance) > emptyCellCheckDistance;
-
                         distancePercentage = Math.Sign(distance) * Math.Min(Math.Abs(distance / maximumDistance), 1.0f);
 
-                        if (empty)
-                        {
-                            emptyCells.AddOrUpdate(cellId, distancePercentage, delegate (Vector3i nceliid, float oldvalue)
-                            {
-                                return Math.Abs(distancePercentage) < Math.Abs(oldvalue) ? distancePercentage : oldvalue;
-                            });
-                        }
-                        else
-                            if (!empty)
-                            usedCells[cellId] = distancePercentage;
+                        //cells.AddOrUpdate(cellId, distancePercentage, delegate (Vector3i ncellid, float oldvalue)
+                        //{
+                        //    return Math.Abs(distancePercentage) < Math.Abs(oldvalue) ? distancePercentage : oldvalue;
+                        //});
 
                         //int index = (ix + iy * sx + iz * sx * sy) * 4;
 
@@ -150,27 +140,29 @@ namespace SDFTool
                         //testData[(ix + iy * sx) * 4 + 2] = (byte)(triangleData == null ? 128 : 0);
 #endif
 
-                        // don't store tex coords for empty space. Note that right now "empty" means N% from the surface
-                        // it could be altered for different situations
-                        if (triangleData != null)//distancePercentage < 0.1f)
+                        if (triangleData != null)
                         {
                             // Saved triangle data
                             Tuple<Mesh, Face> tuple = (Tuple<Mesh, Face>)triangleData;
                             Mesh mesh = tuple.Item1;
                             Face face = tuple.Item2;
 
-                            Vector3D tca = mesh.TextureCoordinateChannels[0][face.Indices[0]];
-                            Vector3D tcb = mesh.TextureCoordinateChannels[0][face.Indices[1]];
-                            Vector3D tcc = mesh.TextureCoordinateChannels[0][face.Indices[2]];
 
-                            Vector3D tc = tca * triangleWeights.X + tcb * triangleWeights.Y + tcc * triangleWeights.Z;
+                            if (mesh.TextureCoordinateChannelCount > 0 && mesh.TextureCoordinateChannels[0].Count > 0)
+                            {
+                                Vector3D tca = mesh.TextureCoordinateChannels[0][face.Indices[0]];
+                                Vector3D tcb = mesh.TextureCoordinateChannels[0][face.Indices[1]];
+                                Vector3D tcc = mesh.TextureCoordinateChannels[0][face.Indices[2]];
 
-                            if (tc.X < 0 || tc.Y < 0 || tc.X > 1 || tc.Y > 1 || tc.Z != 0)
-                                Console.WriteLine("Result weights are invalid!");
+                                Vector3D tc = tca * triangleWeights.X + tcb * triangleWeights.Y + tcc * triangleWeights.Z;
 
-                            // texture coords
-                            data[ix, iy, iz, 1] = (new HalfFloat(tc.X)).Data;
-                            data[ix, iy, iz, 2] = (new HalfFloat(tc.Y)).Data;
+                                if (tc.X < 0 || tc.Y < 0 || tc.X > 1 || tc.Y > 1 || tc.Z != 0)
+                                    Console.WriteLine("Result weights are invalid!");
+
+                                // texture coords
+                                data[ix, iy, iz, 1] = (new HalfFloat(tc.X)).Data;
+                                data[ix, iy, iz, 2] = (new HalfFloat(tc.Y)).Data;
+                            }
 
                             float uvdist = Math.Min(Math.Min(triangleWeights.X, triangleWeights.Y), triangleWeights.Z);
                             data[ix, iy, iz, 3] = (new HalfFloat(0.5f - uvdist)).Data;
@@ -186,26 +178,57 @@ namespace SDFTool
             }
             );
 
-            foreach (var key in usedCells.Keys)
-                ((IDictionary<Vector3i, float>)emptyCells).Remove(key);
+            // split to cells
 
+            int usedCells = 0;
             int cellsx = (int)Math.Ceiling(sx / (float)cellSize);
             int cellsy = (int)Math.Ceiling(sy / (float)cellSize);
             int cellsz = (int)Math.Ceiling(sz / (float)cellSize);
 
             int totalCells = cellsx * cellsy * cellsz;
-            int paddedCellSize = cellSize + cellPadding * 2;
+            int paddedCellSize = cellSize + cellPadding;
+
+
+            Tuple<float, Texture3D<ushort>>[] cells = new Tuple<float, Texture3D<ushort>>[totalCells];
+
+            for (int iz = 0; iz < cellsz; iz++)
+                for (int iy = 0; iy < cellsy; iy++)
+                    for (int ix = 0; ix < cellsx; ix++)
+                    {
+                        int index = ix + iy * cellsx + iz * cellsx * cellsy;
+
+                        Texture3D<ushort> block = data.GetBlock(ix * cellSize, iy * cellSize, iz * cellSize, paddedCellSize, paddedCellSize, paddedCellSize, new HalfFloat(emptyCellCheckDistance).Data, 0, 0, 0);
+
+                        float distancePercentage = float.MaxValue;
+
+                        for (int i = 0; i < block.Data.Length; i += block.Components)
+                        {
+                            float distance = new HalfFloat(block.Data[i]).ToSingle();
+                            if (Math.Abs(distance) < Math.Abs(distancePercentage))
+                                distancePercentage = distance;
+                        }
+
+                        if (Math.Abs(distancePercentage) < emptyCellCheckDistance)
+                        {
+                            usedCells++;
+                        }
+                        else
+                            block = null;
+
+                        cells[index] = new Tuple<float, Texture3D<ushort>>(distancePercentage, block);
+                    }
+
 
             int gridx;
             int gridy;
             int gridz;
-            FindBestDividers(usedCells.Count + 1, out gridx, out gridy, out gridz, 16384 / paddedCellSize);
+            FindBestDividers(usedCells + 1, out gridx, out gridy, out gridz, 16384 / paddedCellSize);
 
             Texture3D<ushort> partialData = new Texture3D<ushort>(4, gridx * paddedCellSize, gridy * paddedCellSize, gridz * paddedCellSize);
 
             Console.WriteLine("[{0}] Got {1} empty cells, cell grid size {2}, {3:P}, total {4} of {5}x{5}x{5} cells, size {6} vs {7}, grid {8}x{9}x{10}",
-                sw.Elapsed, totalCells - usedCells.Count, new Vector3i(cellsx, cellsy, cellsz), usedCells.Count / (float)totalCells,
-                usedCells.Count,
+                sw.Elapsed, totalCells - usedCells, new Vector3i(cellsx, cellsy, cellsz), usedCells / (float)totalCells,
+                usedCells,
                 paddedCellSize,
                 partialData.Bytes,
                 data.Bytes,
@@ -226,75 +249,42 @@ namespace SDFTool
                 for (int iy = 0; iy < cellsy; iy++)
                     for (int ix = 0; ix < cellsx; ix++)
                     {
-                        Vector3i vindex = new Vector3i(ix, iy, iz);
+                        int index = ix + iy * cellsx + iz * cellsx * cellsy;
 
-                        ushort atlasX = 0;
-                        ushort atlasY = 0;
-                        ushort atlasZ = 0;
+                        int atlasX = 0;
+                        int atlasY = 0;
+                        int atlasZ = 0;
 
-                        float distancePercentage;
-                        if (usedCells.TryGetValue(vindex, out distancePercentage))
+                        Tuple<float, Texture3D<ushort>> cell = cells[index];
+
+                        if (cell.Item2 != null)
                         {
                             // Add used cell to 3D atlas TODO: move this code to separate function
                             partialCells++;
 
-                            if (partialCells >= ushort.MaxValue)
-                                throw new Exception("Too many cells for partial LOD!");
+                            if (partialCells >= usedCells + 1)
+                                throw new Exception("Too many cells for partial LOD: "+ partialCells + "!");
 
-                            atlasZ = (ushort)((partialCells / (gridy * gridx)) * paddedCellSize);
-                            atlasY = (ushort)(((partialCells % (gridy * gridx)) / gridx) * paddedCellSize);
-                            atlasX = (ushort)(((partialCells % (gridy * gridx)) % gridx) * paddedCellSize);
-                            /*
-
-                            for (int nz = -cellPadding; nz < cellSize + cellPadding; nz++)
-                            {
-                                int bz = iz * cellSize + nz;
-
-                                for (int ny = -cellPadding; ny < cellSize + cellPadding; ny++)
-                                {
-                                    int by = iy * cellSize + ny;
-
-                                    for (int nx = -cellPadding; nx < cellSize + cellPadding; nx++)
-                                    {
-                                        int bx = ix * cellSize + nx;
-
-                                        int sourceIndex = (bx + by * sx + bz * sx * sy) * 4;
-                                        int targetIndex = ((nx + cellPadding) + (ny + cellPadding) * paddedCellSize + ((nz + cellPadding) + (partialCells - 1) * paddedCellSize) * paddedCellSize * paddedCellSize) * 4;
-
-                                        if (bx < 0 || bx >= sx || by < 0 || by >= sy || bz < 0 || bz >= sz)
-                                        {
-                                            partialData[targetIndex + 0] = new HalfFloat(distancePercentage).Data;
-                                        }
-                                        else
-                                        {
-                                            partialData[targetIndex + 0] = data[sourceIndex + 0];
-                                            partialData[targetIndex + 1] = data[sourceIndex + 1];
-                                            partialData[targetIndex + 2] = data[sourceIndex + 2];
-                                            partialData[targetIndex + 3] = data[sourceIndex + 3];
-                                        }
-                                    }
-                                }
-                            }*/
-
-                            Texture3D<ushort> block = data.GetBlock(ix * cellSize - 1, iy * cellSize - 1, iz * cellSize - 1, paddedCellSize, paddedCellSize, paddedCellSize, new HalfFloat(distancePercentage).Data, 0, 0, 0);
-
-                            partialData.PutBlock(block, atlasX, atlasY, atlasZ);
-
+                            atlasZ = (partialCells / (gridy * gridx)) * paddedCellSize;
+                            atlasY = ((partialCells % (gridy * gridx)) / gridx) * paddedCellSize;
+                            atlasX = ((partialCells % (gridy * gridx)) % gridx) * paddedCellSize;
+                           
+                            partialData.PutBlock(cell.Item2, atlasX, atlasY, atlasZ);
                         }
-                        else if (emptyCells.TryGetValue(vindex, out distancePercentage))
+                        else
                         {
                             atlasX = 0;
                             atlasY = 0;
                             atlasZ = 0;
                         }
 
-                        zeroLodData[ix, iy, iz, 0] = (ushort)(distancePercentage * 32768.0f + 32767);
-                        zeroLodData[ix, iy, iz, 1] = atlasX;
-                        zeroLodData[ix, iy, iz, 2] = atlasY;
-                        zeroLodData[ix, iy, iz, 3] = atlasZ;
+                        zeroLodData[ix, iy, iz, 0] = (new HalfFloat(cell.Item1)).Data;
+                        zeroLodData[ix, iy, iz, 1] = (new HalfFloat((atlasX) / (float)partialData.Width)).Data;
+                        zeroLodData[ix, iy, iz, 2] = (new HalfFloat((atlasY) / (float)partialData.Height)).Data;
+                        zeroLodData[ix, iy, iz, 3] = (new HalfFloat((atlasZ) / (float)partialData.Depth)).Data;
                     }
 
-            Helper.SaveKTX(0x881A/*0x822C*/, zeroLodData.Width, zeroLodData.Height, zeroLodData.Depth, zeroLodData.Data, Path.GetFileNameWithoutExtension(outFile) + "_lod_0.ktx"); // GL_RG16
+            Helper.SaveKTX(0x881A/*0x822C*/, zeroLodData.Width, zeroLodData.Height, zeroLodData.Depth, zeroLodData.Data, Path.GetFileNameWithoutExtension(outFile) + "_lod_0.ktx"); ; // GL_RGBA16 /*GL_RG16*/
             Helper.SaveKTX(0x881A, partialData.Width, partialData.Height, partialData.Depth, partialData.Data, Path.GetFileNameWithoutExtension(outFile) + "_lod_hi.ktx");
 
             Console.WriteLine("[{0}] KTX saved, saving boundary mesh", sw.Elapsed);
@@ -321,6 +311,16 @@ namespace SDFTool
             Console.WriteLine("[{0}] All done", sw.Elapsed);
 
             sw.Stop();
+        }
+
+        private static void Iterate(int from, int to, Action<int> action)
+        {
+#if !DEBUG_PARALLEL
+            Parallel.For(from, to, action);
+#else
+            for (int i = from; i < to; i++)
+                action(i);
+#endif
         }
 
         private static void FindBestDividers(int value, out int x, out int y, out int z, int max)

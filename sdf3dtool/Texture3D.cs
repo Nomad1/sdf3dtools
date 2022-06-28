@@ -32,6 +32,11 @@ namespace SDFTool
             get { return m_depth; }
         }
 
+        public int Components
+        {
+            get { return m_components; }
+        }
+
         public T[] Data
         {
             get { return m_data; }
@@ -94,7 +99,8 @@ namespace SDFTool
                         if (!IsValidCoord(bx, by, bz))
                         {
                             for (int nc = 0; nc < m_components; nc++)
-                                result[nx, ny, nz, nc] = defaultValue[nc];
+                                result[nx, ny, nz, nc] = this[0, 0, 0, nc];
+                            //defaultValue[nc];
                         }
                         else
                         {

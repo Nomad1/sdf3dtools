@@ -74,6 +74,16 @@ namespace RunMobile.Utility
             Data = HalfHelper.SingleToHalf(value);
         }
 
+        public HalfFloat(ushort data)
+        {
+            Data = data;
+        }
+
+        public float ToSingle()
+        {
+            return HalfHelper.HalfToSingle(Data);
+        }
+
         #region HalfHelper
 
         private static class HalfHelper
@@ -163,6 +173,67 @@ namespace RunMobile.Utility
                 {
                     return (ushort)(BaseTable[(value >> 23) & 0x1ff] + ((value & 0x007fffff) >> ShiftTable[value >> 23]));
                 }
+            }
+
+            public static unsafe float HalfToSingle(ushort half)
+            {
+                int value = HalfToFloat(half);
+
+                return *(float*)&value;
+            }
+
+            private static Int32 HalfToFloat(UInt16 ui16)
+            {
+                Int32 sign = (ui16 >> 15) & 0x00000001;
+                Int32 exponent = (ui16 >> 10) & 0x0000001f;
+                Int32 mantissa = ui16 & 0x000003ff;
+
+                if (exponent == 0)
+                {
+                    if (mantissa == 0)
+                    {
+                        // Plus or minus zero
+
+                        return sign << 31;
+                    }
+                    else
+                    {
+                        // Denormalized number -- renormalize it
+
+                        while ((mantissa & 0x00000400) == 0)
+                        {
+                            mantissa <<= 1;
+                            exponent -= 1;
+                        }
+
+                        exponent += 1;
+                        mantissa &= ~0x00000400;
+                    }
+                }
+                else if (exponent == 31)
+                {
+                    if (mantissa == 0)
+                    {
+                        // Positive or negative infinity
+
+                        return (sign << 31) | 0x7f800000;
+                    }
+                    else
+                    {
+                        // Nan -- preserve sign and significand bits
+
+                        return (sign << 31) | 0x7f800000 | (mantissa << 13);
+                    }
+                }
+
+                // Normalized number
+
+                exponent = exponent + (127 - 15);
+                mantissa = mantissa << 13;
+
+                // Assemble S, E and M.
+
+                return (sign << 31) | (exponent << 23) | mantissa;
             }
         }
         #endregion

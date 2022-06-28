@@ -238,6 +238,9 @@ namespace SDFTool
         public int CountIntersections(Vector3 point, Vector3 dir)
         {
             int count = 0;
+
+            if (float.IsNaN(dir.X) || float.IsNaN(dir.Y) || float.IsNaN(dir.Z))
+                dir = new Vector3(0, 0, 1);
             Vector3 idir = new Vector3(1.0f / dir.X, 1.0f / dir.Y, 1.0f / dir.Z);
             Vector3 localPoint = (point - m_sceneMin) / m_gridStep;
             Vector3 localEndPoint = localPoint + new Vector3(Math.Sign(dir.X) * m_gridx, Math.Sign(dir.Y) * m_gridy, Math.Sign(dir.Z) * m_gridz);
