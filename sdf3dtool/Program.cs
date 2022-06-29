@@ -94,43 +94,37 @@ namespace SDFTool
 
             Console.WriteLine("[{0}] File preprocessed. X: {1}, Y: {2}, Z: {3}", sw.Elapsed, sx, sy, sz);
 
-            //ConcurrentDictionary<Vector3i, float> cells = new ConcurrentDictionary<Vector3i, float>();
-
             float emptyCellCheckDistance = step * 0.5f / maximumDistance;// * 0.5f;// (float)Math.Sqrt(2) * 0.5f;// cellSize * step * 0.05f;// * (float)Math.Sqrt(2) * 0.5f;
 
-            Iterate(0, sz, (iz) =>
+            Iterate(0, sz * sy * sx, (i) =>
             {
-                Console.WriteLine("[{0}] Processing depth {1}", sw.Elapsed, iz);
+                int iz = i / (sx * sy);
+                int iy = (i % (sx * sy)) / sx;
+                int ix = (i % (sx * sy)) % sx;
+
+                if (ix == 0 && iy == 0)
+                    Console.WriteLine("[{0}] Processing {1}", sw.Elapsed, new Vector(ix, iy, iz));
 
 #if DEBUG
                 byte[] testData = new byte[sx * sy * 4];
 #endif
-                for (int iy = 0; iy < sy; iy++)
+                Vector point = lowerBound + new Vector(ix, iy, iz) * step;
+
+                float distance;
+                Vector triangleWeights;
+                object triangleData;
+                Vector3i cellId = new Vector3i(ix / cellSize, iy / cellSize, iz / cellSize);
+
+                float distancePercentage;
+
+                bool empty = !triangleMap.FindTriangles(point, out distance, out triangleWeights, out triangleData);
+
+                distancePercentage = Math.Sign(distance) * Math.Min(Math.Abs(distance / maximumDistance), 1.0f);
+
+                // the distance
+                //lock (data)
                 {
-                    for (int ix = 0; ix < sx; ix++)
-                    {
-                        Vector point = lowerBound + new Vector(ix, iy, iz) * step;
-
-                        float distance;
-                        Vector triangleWeights;
-                        object triangleData;
-                        Vector3i cellId = new Vector3i(ix / cellSize, iy / cellSize, iz / cellSize);
-
-                        float distancePercentage;
-
-                        bool empty = !triangleMap.FindTriangles(point, out distance, out triangleWeights, out triangleData);
-
-                        distancePercentage = Math.Sign(distance) * Math.Min(Math.Abs(distance / maximumDistance), 1.0f);
-
-                        //cells.AddOrUpdate(cellId, distancePercentage, delegate (Vector3i ncellid, float oldvalue)
-                        //{
-                        //    return Math.Abs(distancePercentage) < Math.Abs(oldvalue) ? distancePercentage : oldvalue;
-                        //});
-
-                        //int index = (ix + iy * sx + iz * sx * sy) * 4;
-
-                        // the distance
-                        data[ix, iy, iz, 0] = (new HalfFloat(distancePercentage)).Data;
+                    data[ix, iy, iz, 0] = (new HalfFloat(distancePercentage)).Data;
 
 #if DEBUG
                         // temporary test images. I had to scale the distance 4x to make them visible. Not sure it would work
@@ -140,40 +134,40 @@ namespace SDFTool
                         //testData[(ix + iy * sx) * 4 + 2] = (byte)(triangleData == null ? 128 : 0);
 #endif
 
-                        if (triangleData != null)
+                    if (triangleData != null)
+                    {
+                        // Saved triangle data
+                        Tuple<Mesh, Face> tuple = (Tuple<Mesh, Face>)triangleData;
+                        Mesh mesh = tuple.Item1;
+                        Face face = tuple.Item2;
+
+
+                        if (mesh.TextureCoordinateChannelCount > 0 && mesh.TextureCoordinateChannels[0].Count > 0)
                         {
-                            // Saved triangle data
-                            Tuple<Mesh, Face> tuple = (Tuple<Mesh, Face>)triangleData;
-                            Mesh mesh = tuple.Item1;
-                            Face face = tuple.Item2;
+                            Vector3D tca = mesh.TextureCoordinateChannels[0][face.Indices[0]];
+                            Vector3D tcb = mesh.TextureCoordinateChannels[0][face.Indices[1]];
+                            Vector3D tcc = mesh.TextureCoordinateChannels[0][face.Indices[2]];
 
+                            Vector3D tc = tca * triangleWeights.X + tcb * triangleWeights.Y + tcc * triangleWeights.Z;
 
-                            if (mesh.TextureCoordinateChannelCount > 0 && mesh.TextureCoordinateChannels[0].Count > 0)
-                            {
-                                Vector3D tca = mesh.TextureCoordinateChannels[0][face.Indices[0]];
-                                Vector3D tcb = mesh.TextureCoordinateChannels[0][face.Indices[1]];
-                                Vector3D tcc = mesh.TextureCoordinateChannels[0][face.Indices[2]];
+                            if (tc.X < 0 || tc.Y < 0 || tc.X > 1 || tc.Y > 1 || tc.Z != 0)
+                                Console.WriteLine("Result weights are invalid!");
 
-                                Vector3D tc = tca * triangleWeights.X + tcb * triangleWeights.Y + tcc * triangleWeights.Z;
-
-                                if (tc.X < 0 || tc.Y < 0 || tc.X > 1 || tc.Y > 1 || tc.Z != 0)
-                                    Console.WriteLine("Result weights are invalid!");
-
-                                // texture coords
-                                data[ix, iy, iz, 1] = (new HalfFloat(tc.X)).Data;
-                                data[ix, iy, iz, 2] = (new HalfFloat(tc.Y)).Data;
-                            }
-
-                            float uvdist = Math.Min(Math.Min(triangleWeights.X, triangleWeights.Y), triangleWeights.Z);
-                            data[ix, iy, iz, 3] = (new HalfFloat(0.5f - uvdist)).Data;
+                            // texture coords
+                            data[ix, iy, iz, 1] = (new HalfFloat(tc.X)).Data;
+                            data[ix, iy, iz, 2] = (new HalfFloat(tc.Y)).Data;
                         }
 
-                        // TODO: index + 1 and index + 2 should be texture coordinates. index + 3 is empty
+                        float uvdist = Math.Min(Math.Min(triangleWeights.X, triangleWeights.Y), triangleWeights.Z);
+                        data[ix, iy, iz, 3] = (new HalfFloat(0.5f - uvdist)).Data;
                     }
+
+                    // TODO: index + 1 and index + 2 should be texture coordinates. index + 3 is empty
                 }
 
 #if DEBUG
-                Helper.SaveBitmap(testData, sx, sy, Path.GetFileNameWithoutExtension(outFile) + "_" + iz);
+                if (ix == sx - 1 && iy == sy - 1)
+                    Helper.SaveBitmap(testData, sx, sy, Path.GetFileNameWithoutExtension(outFile) + "_" + iz);
 #endif
             }
             );
@@ -315,7 +309,7 @@ namespace SDFTool
 
         private static void Iterate(int from, int to, Action<int> action)
         {
-#if !DEBUG_PARALLEL
+#if !DEBUG
             Parallel.For(from, to, action);
 #else
             for (int i = from; i < to; i++)

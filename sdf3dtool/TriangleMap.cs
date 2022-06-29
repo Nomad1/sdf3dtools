@@ -222,12 +222,32 @@ namespace SDFTool
                     }
 
                 if (distance != float.MaxValue)
-                    localDist = distance / m_gridStep + 1.73205080757f / 2;
+                    localDist = distance / m_gridStep + 1.73205080757f / 2; // half of cubic root of two
             }
 
             sign = CountIntersections(point, Vector3.Normalize(point - result)) % 2 == 0 ? 1 : -1;
+            int count = 0;
+            PreparedTriangle anyTriangle;
+            foreach (var triangle in triangles)
+            {
+                anyTriangle = triangle;
+                Vector3 dir = Vector3.Normalize(point - anyTriangle.Center);
 
-            distance *= sign;
+                if (float.IsNaN(dir.X) || float.IsNaN(dir.Y) || float.IsNaN(dir.Z))
+                    continue;
+
+                sign += CountIntersections(point, dir) % 2 == 0 ? 1 : -1;
+                count++;
+
+                if (Math.Abs(sign) > 5)
+                    break;
+            }
+
+            //sign = CountIntersections(point, Vector3.Normalize(point - anyTriangle.Center)) % 2 == 0 ? 1 : -1;
+            //sign = CountIntersections(point, Vector3.Normalize(point - result)) % 2 == 0 ? 1 : -1;
+            //sign = InsideCheck(point, Vector3.Normalize(point - result)) ? -1 : 1;
+
+            distance *= Math.Sign(sign);
 
             //if (weights.X < 0 || weights.Y < 0 || weights.Z < 0 || weights.X > 1 || weights.Y > 1 || weights.Z > 1)
                 //Console.WriteLine("Weights are invalid!");
@@ -241,6 +261,59 @@ namespace SDFTool
 
             if (float.IsNaN(dir.X) || float.IsNaN(dir.Y) || float.IsNaN(dir.Z))
                 dir = new Vector3(0, 0, 1);
+
+            Vector3 idir = new Vector3(1.0f / dir.X, 1.0f / dir.Y, 1.0f / dir.Z);
+            Vector3 localPoint = (point - m_sceneMin) / m_gridStep;
+            Vector3 localEndPoint = localPoint + new Vector3(Math.Sign(dir.X) * m_gridx, Math.Sign(dir.Y) * m_gridy, Math.Sign(dir.Z) * m_gridz);
+
+            int fromx = Math.Max((int)Math.Floor(Math.Min(localPoint.X, localEndPoint.X)), 0);
+            int fromy = Math.Max((int)Math.Floor(Math.Min(localPoint.Y, localEndPoint.Y)), 0);
+            int fromz = Math.Max((int)Math.Floor(Math.Min(localPoint.Z, localEndPoint.Z)), 0);
+            int tox = Math.Min((int)Math.Ceiling(Math.Max(localPoint.X, localEndPoint.X)), m_gridx);
+            int toy = Math.Min((int)Math.Ceiling(Math.Max(localPoint.Y, localEndPoint.Y)), m_gridy);
+            int toz = Math.Min((int)Math.Ceiling(Math.Max(localPoint.Z, localEndPoint.Z)), m_gridz);
+
+            // TODO: 3dda for selecting needed grids, not a bruteforce
+
+            HashSet<PreparedTriangle> triangles = new HashSet<PreparedTriangle>();
+
+            for (int z = fromz; z < toz; z++)
+                for (int y = fromy; y < toy; y++)
+                    for (int x = fromx; x < tox; x++)
+                    {
+                        int index = x + y * m_gridx + z * m_gridx * m_gridy;
+
+                        // empty cells
+                        if (m_triangles[index] == null)
+                            continue;
+
+                        if (!iRayBoundIntersection(new Vector3(x, y, z), new Vector3(x + 1, y + 1, z + 1), localPoint, idir))
+                            continue;
+
+                        foreach (var triangle in m_triangles[index])
+                            if (!triangles.Contains(triangle))
+                            {
+                                triangles.Add(triangle);
+
+                                if (!iRayBoundIntersection(triangle.LowerBound, triangle.UpperBound, point, idir))
+                                    continue;
+
+                                if (triangle.IntersectsRay(point, dir))
+                                    count++;
+                            }
+                    }
+
+            return count;
+        }
+
+        public bool InsideCheck(Vector3 point, Vector3 dir)
+        {
+            int count = 0;
+            int countBack = 0;
+
+            if (float.IsNaN(dir.X) || float.IsNaN(dir.Y) || float.IsNaN(dir.Z))
+                dir = new Vector3(0, 0, 1);
+
             Vector3 idir = new Vector3(1.0f / dir.X, 1.0f / dir.Y, 1.0f / dir.Z);
             Vector3 localPoint = (point - m_sceneMin) / m_gridStep;
             Vector3 localEndPoint = localPoint + new Vector3(Math.Sign(dir.X) * m_gridx, Math.Sign(dir.Y) * m_gridy, Math.Sign(dir.Z) * m_gridz);
@@ -275,11 +348,16 @@ namespace SDFTool
                                 triangles.Add(triangle);
 
                                 if (triangle.IntersectsRay(point, dir))
-                                    count++;
+                                {
+                                    if (Vector3.Dot(triangle.Normal, point) < 0)
+                                        countBack++;
+                                    else
+                                        count++;
+                                }
                             }
                     }
 
-            return count;
+            return countBack < count;
         }
 
         /// <summary>

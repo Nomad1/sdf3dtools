@@ -101,7 +101,7 @@ namespace SDFTool
         public readonly float Radius;
 
         // Normal
-        private readonly Vector3 Normal;
+        public readonly Vector3 Normal;
         // Distance from A to (0,0,0)
         private readonly float ZeroDistance;
 
@@ -254,7 +254,7 @@ namespace SDFTool
             float u = Vector3.Dot(Vector3.Cross(cb, pb), Normal) / NormalLength;
             float v = Vector3.Dot(Vector3.Cross(ac, pc), Normal) / NormalLength;
             float w = Vector3.Dot(Vector3.Cross(ba, pa), Normal) / NormalLength;
-            //1.0f - u - v;
+
             weights = new Vector3(u, v, w);
 
             float len;
