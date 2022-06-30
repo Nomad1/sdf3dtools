@@ -151,7 +151,7 @@ namespace SDFTool
                             Vector3D tc = tca * triangleWeights.X + tcb * triangleWeights.Y + tcc * triangleWeights.Z;
 
                             if (tc.X < 0 || tc.Y < 0 || tc.X > 1 || tc.Y > 1 || tc.Z != 0)
-                                Console.WriteLine("Result weights are invalid!");
+                                Console.WriteLine("Result weights are invalid: {0}!", tc);
 
                             // texture coords
                             data[ix, iy, iz, 1] = (new HalfFloat(tc.X)).Data;
