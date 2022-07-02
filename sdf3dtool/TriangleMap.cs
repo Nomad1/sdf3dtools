@@ -66,13 +66,13 @@ namespace SDFTool
             {
                 //get tile coordinates for lower and upper triangle points
                 Vector3 lb = (triangle.LowerBound - m_sceneMin) / m_gridStep;
-                int fromx = (int)Math.Floor(lb.X);
-                int fromy = (int)Math.Floor(lb.Y);
-                int fromz = (int)Math.Floor(lb.Z);
+                int fromx = Math.Max((int)Math.Floor(lb.X), 0);
+                int fromy = Math.Max((int)Math.Floor(lb.Y), 0);
+                int fromz = Math.Max((int)Math.Floor(lb.Z), 0);
                 Vector3 ub = (triangle.UpperBound - m_sceneMin) / m_gridStep;
-                int tox = (int)Math.Ceiling(ub.X);
-                int toy = (int)Math.Ceiling(ub.Y);
-                int toz = (int)Math.Ceiling(ub.Z);
+                int tox = Math.Min((int)Math.Ceiling(ub.X), m_gridx);
+                int toy = Math.Min((int)Math.Ceiling(ub.Y), m_gridy);
+                int toz = Math.Min((int)Math.Ceiling(ub.Z), m_gridz);
 
                 int instances = 0;
 
@@ -100,10 +100,24 @@ namespace SDFTool
                             instances++;
                         }
 
-                if (instances == 0)
+                if (instances == 0) // too small triangle or AABB intersection fails
+                {
                     Console.WriteLine("Triangle got no instances {0} - {1}", lb, ub);
-                else
-                    TriangleInstances += instances;
+
+                    /*
+                    int index = fromx + fromy * m_gridx + fromz * m_gridx * m_gridy;
+
+                    if (triangles[index] == null)
+                    {
+                        triangles[index] = new List<PreparedTriangle>();
+                        CellsUsed++;
+                    }
+
+                    triangles[index].Add(triangle);
+                    instances++;*/
+                }
+
+                TriangleInstances += instances;
             }
 
             m_triangles = new PreparedTriangle[triangles.Length][];
@@ -234,7 +248,7 @@ namespace SDFTool
             {
                 sign += CountIntersections(point, dir) % 2 == 0 ? 1 : -1;
 
-                if (Math.Abs(sign) >= 3)
+                if (Math.Abs(sign) >= 4) // no point for further checks
                     break;
                 //count++;
             }

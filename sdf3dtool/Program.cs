@@ -39,7 +39,7 @@ namespace SDFTool
 
             List<Tuple<Vector, Vector, Bone>> bones = new List<Tuple<Vector, Vector, Bone>>();
 
-            Preprocess(scene, scene.RootNode, ref matrix, triangleList, bones);
+            Preprocess(scene, scene.RootNode, matrix, triangleList, bones);
 
             List<float> xvalues = new List<float>();
             List<float> yvalues = new List<float>();
@@ -364,10 +364,9 @@ namespace SDFTool
             }
         }
 
-        private static void Preprocess(Scene scene, Node node, ref Matrix4x4 matrix, IList<PreparedTriangle> allTriangles, IList<Tuple<Vector, Vector, Bone>> bones)
+        private static void Preprocess(Scene scene, Node node, Matrix4x4 matrix, IList<PreparedTriangle> allTriangles, IList<Tuple<Vector, Vector, Bone>> bones)
         {
-            Matrix4x4 prev = matrix;
-            matrix = prev * node.Transform;
+            matrix = node.Transform * matrix;
 
             if (node.HasMeshes)
             {
@@ -486,9 +485,7 @@ namespace SDFTool
             }
 
             for (int i = 0; i < node.ChildCount; i++)
-                Preprocess(scene, node.Children[i], ref matrix, allTriangles, bones);
-
-            matrix = prev;
+                Preprocess(scene, node.Children[i], matrix, allTriangles, bones);
         }
 
 #if USE_PSEUDO_NORMALS
@@ -520,7 +517,7 @@ namespace SDFTool
             }
 
             int gridSize = args.Length > 2 ? int.Parse(args[2]) : 64;
-            float scale = args.Length > 3 ? 1.0f / int.Parse(args[3]) : 1.0f;
+            float scale = args.Length > 3 ? 1.0f / float.Parse(args[3]) : 1.0f;
             int cellSize = args.Length > 4 ? int.Parse(args[4]) : 6;
             int cellPadding = args.Length > 5 ? int.Parse(args[5]) : 1;
 
