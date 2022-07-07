@@ -53,9 +53,9 @@ namespace SDFTool
             m_sceneMin = sceneMin;
             m_gridStep = Math.Max(Math.Max(sceneMax.X - sceneMin.X, sceneMax.Y - sceneMin.Y), sceneMax.Z - sceneMin.Z) / denominator;
 
-            m_gridx = (int)Math.Ceiling((sceneMax.X - sceneMin.X) / m_gridStep);
-            m_gridy = (int)Math.Ceiling((sceneMax.Y - sceneMin.Y) / m_gridStep);
-            m_gridz = (int)Math.Ceiling((sceneMax.Z - sceneMin.Z) / m_gridStep);
+            m_gridx = (int)Math.Ceiling((sceneMax.X - sceneMin.X) / m_gridStep) + 1;
+            m_gridy = (int)Math.Ceiling((sceneMax.Y - sceneMin.Y) / m_gridStep) + 1;
+            m_gridz = (int)Math.Ceiling((sceneMax.Z - sceneMin.Z) / m_gridStep) + 1;
 
             List<PreparedTriangle> [] triangles = new List<PreparedTriangle>[m_gridx * m_gridy * m_gridz];
 
@@ -70,15 +70,15 @@ namespace SDFTool
                 int fromy = Math.Max((int)Math.Floor(lb.Y), 0);
                 int fromz = Math.Max((int)Math.Floor(lb.Z), 0);
                 Vector3 ub = (triangle.UpperBound - m_sceneMin) / m_gridStep;
-                int tox = Math.Min((int)Math.Ceiling(ub.X), m_gridx);
-                int toy = Math.Min((int)Math.Ceiling(ub.Y), m_gridy);
-                int toz = Math.Min((int)Math.Ceiling(ub.Z), m_gridz);
+                int tox = Math.Min((int)Math.Ceiling(ub.X), m_gridx - 1);
+                int toy = Math.Min((int)Math.Ceiling(ub.Y), m_gridy - 1);
+                int toz = Math.Min((int)Math.Ceiling(ub.Z), m_gridz - 1);
 
                 int instances = 0;
 
-                for (int z = fromz; z < toz; z++)
-                    for (int y = fromy; y < toy; y++)
-                        for (int x = fromx; x < tox; x++)
+                for (int z = fromz; z <= toz; z++)
+                    for (int y = fromy; y <= toy; y++)
+                        for (int x = fromx; x <= tox; x++)
                         {
                             // check if triangle plane intersects the box
                             Vector3 tileStart = new Vector3(x, y, z) * m_gridStep + m_sceneMin;
