@@ -1,4 +1,4 @@
-﻿#define LOD0_RGBA16F
+﻿//#define LOD0_RGBA16F
 
 using System;
 using System.Collections.Generic;
@@ -86,6 +86,13 @@ namespace SDFTool
             int sx = (int)Math.Ceiling(sceneMax.X / step) - (int)Math.Floor(sceneMin.X / step) + padding * 2;
             int sy = (int)Math.Ceiling(sceneMax.Y / step) - (int)Math.Floor(sceneMin.Y / step) + padding * 2;
             int sz = (int)Math.Ceiling(sceneMax.Z / step) - (int)Math.Floor(sceneMin.Z / step) + padding * 2;
+
+            if (sx % cellSize != 0)
+                sx += cellSize - sx % cellSize;
+            if (sy % cellSize != 0)
+                sy += cellSize - sy % cellSize;
+            if (sz % cellSize != 0)
+                sz += cellSize - sz % cellSize;
 
             Vector lowerBound = new Vector(-step * padding) + sceneMin;
             Vector upperBound = new Vector(step * padding) + sceneMax; // new Vector(sx, sy, sz) * step + lowerBound;
@@ -322,11 +329,16 @@ namespace SDFTool
                         zeroLodData[ix, iy, iz, 2] = (new HalfFloat(atlasY / 255.0f)).Data;
                         zeroLodData[ix, iy, iz, 3] = (new HalfFloat(atlasZ / 255.0f)).Data;
 #else
-                        float dist = cell.Item1 * 127.5f;
-                        dist = Math.Sign(dist) * (float)Math.Floor((float)Math.Abs(dist));
+                        //float dist = cell.Item1 * 127.5f;
+                        //dist = Math.Sign(dist) * (float)Math.Floor((float)Math.Abs(dist));
                         zeroLodData[ix, iy, iz, 0] =
-                            //(byte)(Math.Min(Math.Abs(cell.Item1) * 255, 255));
-                            (byte)Math.Max(Math.Min(dist + 127, 255), 0);
+                        //(byte)(Math.Min(Math.Abs(cell.Item1) * 255, 255));
+                        //(byte)Math.Max(Math.Min(dist + 127, 255), 0);
+                            (byte)(Math.Max(0, Math.Min(255, (cell.Item1 * 0.5f + 0.5f) * 255)));
+
+                        if (zeroLodData[ix, iy, iz, 0] == 0x7f && atlasX == 0 && atlasY == 0 && atlasZ == 0)
+                            zeroLodData[ix, iy, iz, 0] = (byte)0x80;
+
                         zeroLodData[ix, iy, iz, 1] = (byte)(atlasX);
                         zeroLodData[ix, iy, iz, 2] = (byte)(atlasY);
                         zeroLodData[ix, iy, iz, 3] = (byte)(atlasZ);
