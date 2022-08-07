@@ -1,5 +1,6 @@
-﻿using System;
-using System.Collections.Concurrent;
+﻿#define LOD0_RGBA16F
+
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -79,18 +80,22 @@ namespace SDFTool
             // number of extra pixels on the each size
             int padding = 2;
 
-            int sx = (int)Math.Ceiling((sceneMax.X - sceneMin.X) / step) + padding * 2;
+            /*int sx = (int)Math.Ceiling((sceneMax.X - sceneMin.X) / step) + padding * 2;
             int sy = (int)Math.Ceiling((sceneMax.Y - sceneMin.Y) / step) + padding * 2;
-            int sz = (int)Math.Ceiling((sceneMax.Z - sceneMin.Z) / step) + padding * 2;
+            int sz = (int)Math.Ceiling((sceneMax.Z - sceneMin.Z) / step) + padding * 2;*/
+            int sx = (int)Math.Ceiling(sceneMax.X / step) - (int)Math.Floor(sceneMin.X / step) + padding * 2;
+            int sy = (int)Math.Ceiling(sceneMax.Y / step) - (int)Math.Floor(sceneMin.Y / step) + padding * 2;
+            int sz = (int)Math.Ceiling(sceneMax.Z / step) - (int)Math.Floor(sceneMin.Z / step) + padding * 2;
 
             Vector lowerBound = new Vector(-step * padding) + sceneMin;
-            Vector upperBound = new Vector(sx, sy, sz) * step + sceneMin;
+            Vector upperBound = new Vector(step * padding) + sceneMax; // new Vector(sx, sy, sz) * step + lowerBound;
 
             float maximumDistance =
                 //Math.Max(Math.Max(sceneMax.X - sceneMin.X, sceneMax.Y - sceneMin.Y), sceneMax.Z - sceneMin.Z);
                 Vector.Distance(sceneMax, sceneMin);
 
-            Texture3D<ushort> data = new Texture3D<ushort>(4, sx, sy, sz);
+            //Texture3D<ushort> data = new Texture3D<ushort>(4, sx, sy, sz);
+            Texture3D<float> data = new Texture3D<float>(4, sx, sy, sz);
 
             Console.WriteLine("[{0}] File preprocessed. X: {1}, Y: {2}, Z: {3}", sw.Elapsed, sx, sy, sz);
 
@@ -126,7 +131,7 @@ namespace SDFTool
                 // the distance
                 //lock (data)
                 {
-                    data[ix, iy, iz, 0] = (new HalfFloat(distancePercentage)).Data;
+                    data[ix, iy, iz, 0] = distancePercentage;
 
 #if DEBUG
                         // temporary test images. I had to scale the distance 4x to make them visible. Not sure it would work
@@ -156,12 +161,12 @@ namespace SDFTool
                                 Console.WriteLine("Result weights are invalid: {0}!", tc);
 
                             // texture coords
-                            data[ix, iy, iz, 1] = (new HalfFloat(tc.X)).Data;
-                            data[ix, iy, iz, 2] = (new HalfFloat(tc.Y)).Data;
+                            data[ix, iy, iz, 1] = tc.X;
+                            data[ix, iy, iz, 2] = tc.Y;
                         }
 
                         float uvdist = Math.Min(Math.Min(triangleWeights.X, triangleWeights.Y), triangleWeights.Z);
-                        data[ix, iy, iz, 3] = (new HalfFloat(0.5f - uvdist)).Data;
+                        data[ix, iy, iz, 3] = 0.5f - uvdist;
                     }
 
                     // TODO: index + 1 and index + 2 should be texture coordinates. index + 3 is empty
@@ -185,8 +190,11 @@ namespace SDFTool
             int paddedCellSize = cellSize + cellPadding;
 
 
-            Tuple<float, Texture3D<ushort>>[] cells = new Tuple<float, Texture3D<ushort>>[totalCells];
-            List<Tuple<float, float>> values = new List<Tuple<float, float>>(paddedCellSize * paddedCellSize * paddedCellSize);
+            Tuple<float, Texture3D<float>>[] cells = new Tuple<float, Texture3D<float>>[totalCells];
+            //List<Tuple<float, float>> values = new List<Tuple<float, float>>(paddedCellSize * paddedCellSize * paddedCellSize);
+
+            Vector cellCenter = new Vector(paddedCellSize, paddedCellSize, paddedCellSize) * 0.5f;
+            float cellCenterDistance = cellCenter.Length();
 
             for (int iz = 0; iz < cellsz; iz++)
                 for (int iy = 0; iy < cellsy; iy++)
@@ -194,86 +202,64 @@ namespace SDFTool
                     {
                         int index = ix + iy * cellsx + iz * cellsx * cellsy;
 
-                        Texture3D<ushort> block = data.GetBlock(ix * cellSize, iy * cellSize, iz * cellSize, paddedCellSize, paddedCellSize, paddedCellSize, new HalfFloat(emptyCellCheckDistance).Data, 0, 0, 0);
-
-                        /*float distancePercentage = float.MaxValue;
-
-                        for (int i = 0; i < block.Data.Length; i += block.Components)
-                        {
-                            float distance = new HalfFloat(block.Data[i]).ToSingle();
-                            if (Math.Abs(distance) < Math.Abs(distancePercentage))
-                                distancePercentage = distance;
-                        }*/
-                        /*
-                        List<float> values = new List<float>(block.Data.Length / block.Components);
-
-                        float distancePercentage = 0;
-                        float minDistance = float.MaxValue;
-                        float maxDistance = float.MinValue;
-                        float avrDistance = 0;
-
-                        for (int i = 0; i < block.Data.Length; i += block.Components)
-                        {
-                            float distance = new HalfFloat(block.Data[i]).ToSingle();
-                            values.Add(distance);
-                            avrDistance += Math.Abs(distance);
-
-                            if (Math.Abs(distance) < Math.Abs(minDistance))
-                                minDistance = distance;
-                            if (Math.Abs(distance) > Math.Abs(maxDistance))
-                                maxDistance = distance;
-
-                        }
-                        */
+                        Texture3D<float> block = data.GetBlock(ix * cellSize, iy * cellSize, iz * cellSize, paddedCellSize, paddedCellSize, paddedCellSize, new float[] { emptyCellCheckDistance, 0, 0, 0 });
 
                         float minDistance = float.MaxValue;
+                        float distancePercentage = 0.0f;
 
 
+                        /*values.Clear();
                         float totalWeight = 0.0f;
-
-                        values.Clear();
 
                         for (int z = 0; z < paddedCellSize; z++)
                             for (int y = 0; y < paddedCellSize; y++)
                                 for (int x = 0; x < paddedCellSize; x++)
                                 {
-                                    float distance = new HalfFloat(block[x, y, z, 0]).ToSingle();
+                                    float distance = block[x, y, z, 0];
 
                                     if (Math.Abs(distance) < Math.Abs(minDistance))
                                         minDistance = distance;
 
-                                    float weight = paddedCellSize * 1.73205080757f - Vector.Distance(new Vector(paddedCellSize * 0.5f, paddedCellSize * 0.5f, paddedCellSize * 0.5f), new Vector(x, y, z));
-                                    //float weight = 3 * paddedCellSize * paddedCellSize - Vector.DistanceSquared(new Vector(paddedCellSize * 0.5f, paddedCellSize * 0.5f, paddedCellSize * 0.5f), new Vector(x, y, z));
+                                    float weight = cellCenterDistance - Vector.Distance(cellCenter, new Vector(x, y, z));
                                     totalWeight += weight;
 
                                     values.Add(new Tuple<float, float>(weight, distance));
                                 }
 
 
-                        float distancePercentage = 0.0f;
-
                         foreach (var pair in values)
                             distancePercentage += pair.Item2 * pair.Item1 / totalWeight;
+                        
+                        distancePercentage = block[paddedCellSize/2, paddedCellSize/2, paddedCellSize/2, 0];
+                        */
 
-                        //minDistance;// avrDistance // values[values.Count / 2];// (values[values.Count/2] + values[values.Count / 2 + 1]) / 2.0f;
+                        for (int i = 0; i < block.Data.Length; i += 4)
+                        {
+                            float distance = block.Data[i];
+                            if (Math.Abs(distance) < Math.Abs(minDistance))
+                                minDistance = distance;
+                        }
 
+                        distancePercentage = block[paddedCellSize / 2, paddedCellSize / 2, paddedCellSize / 2, 0];
+                        //distancePercentage = minDistance;
 
-                        if (Math.Abs(minDistance) < emptyCellCheckDistance)
-                        //if (Math.Abs(distancePercentage) < emptyCellCheckDistance)
+                        if (Math.Abs(minDistance) < emptyCellCheckDistance)// || (int)(distancePercentage * 127) == 0)
                         {
                             usedCells++;
                         }
                         else
+                        {
                             block = null;
+                        }
 
-                        cells[index] = new Tuple<float, Texture3D<ushort>>(distancePercentage, block);
+                        cells[index] = new Tuple<float, Texture3D<float>>(distancePercentage, block);
                     }
 
 
             int gridx;
             int gridy;
             int gridz;
-            FindBestDividers(usedCells + 1, out gridx, out gridy, out gridz, 16384 / paddedCellSize);
+            FindBestDividers(usedCells + 1, out gridx, out gridy, out gridz, 256);
 
             Texture3D<ushort> partialData = new Texture3D<ushort>(4, gridx * paddedCellSize, gridy * paddedCellSize, gridz * paddedCellSize);
 
@@ -285,17 +271,20 @@ namespace SDFTool
                 data.Bytes,
                 gridx, gridy, gridz
                 );
-            Console.WriteLine("[{0}] SDF finished, saving KTX", sw.Elapsed);
+            //Console.WriteLine("[{0}] SDF finished, saving KTX", sw.Elapsed);
 
-            Helper.SaveKTX(0x881A, data.Width, data.Height, data.Depth, data.Data, outFile);
+            //Helper.SaveKTX(Helper.KTX_RGBA16F, data.Width, data.Height, data.Depth, data.Data, outFile);
 
             Console.WriteLine("[{0}] Full size KTX saved, saving lower LOD", sw.Elapsed);
 
             //ushort[] partialData = new ushort[paddedCellSize * paddedCellSize * paddedCellSize * usedCells.Count * 4];
             int partialCells = 0;
 
+#if LOD0_RGBA16F
             Texture3D<ushort> zeroLodData = new Texture3D<ushort>(4, cellsx, cellsy, cellsz);
-
+#else
+            Texture3D<byte> zeroLodData = new Texture3D<byte>(4, cellsx, cellsy, cellsz);
+#endif
             for (int iz = 0; iz < cellsz; iz++)
                 for (int iy = 0; iy < cellsy; iy++)
                     for (int ix = 0; ix < cellsx; ix++)
@@ -306,7 +295,7 @@ namespace SDFTool
                         int atlasY = 0;
                         int atlasZ = 0;
 
-                        Tuple<float, Texture3D<ushort>> cell = cells[index];
+                        Tuple<float, Texture3D<float>> cell = cells[index];
 
                         if (cell.Item2 != null)
                         {
@@ -316,31 +305,42 @@ namespace SDFTool
                             if (partialCells >= usedCells + 1)
                                 throw new Exception("Too many cells for partial LOD: " + partialCells + "!");
 
-                            atlasZ = ((partialCells / (gridy * gridx))) * paddedCellSize;
-                            atlasY = ((partialCells % (gridy * gridx)) / gridx) * paddedCellSize;
-                            atlasX = ((partialCells % (gridy * gridx)) % gridx) * paddedCellSize;
+                            atlasZ = ((partialCells / (gridy * gridx)));
+                            atlasY = ((partialCells % (gridy * gridx)) / gridx);
+                            atlasX = ((partialCells % (gridy * gridx)) % gridx);
 
-                            partialData.PutBlock(cell.Item2, atlasX, atlasY, atlasZ);
-                        }
-                        else
-                        {
-                            atlasX = 0;
-                            atlasY = 0;
-                            atlasZ = 0;
+
+                            if (atlasX >= 256 || atlasY >= 256 || atlasZ >= 256)
+                                throw new Exception("Too big atlas index for partial LOD: " + partialCells + "!");
+
+                            partialData.PutBlock(cell.Item2, atlasX * paddedCellSize, atlasY * paddedCellSize, atlasZ * paddedCellSize, (k) => new HalfFloat(k).Data);
                         }
 
-                        /*zeroLodData[ix, iy, iz, 0] = (new HalfFloat(cell.Item1)).Data;
-                        zeroLodData[ix, iy, iz, 1] = (new HalfFloat((atlasX) / (float)partialData.Width)).Data;
-                        zeroLodData[ix, iy, iz, 2] = (new HalfFloat((atlasY) / (float)partialData.Height)).Data;
-                        zeroLodData[ix, iy, iz, 3] = (new HalfFloat((atlasZ) / (float)partialData.Depth)).Data;*/
-                        zeroLodData[ix, iy, iz, 0] = (new HalfFloat(cell.Item1)).Data;
-                        zeroLodData[ix, iy, iz, 1] = (new HalfFloat(atlasX)).Data;
-                        zeroLodData[ix, iy, iz, 2] = (new HalfFloat(atlasY)).Data;
-                        zeroLodData[ix, iy, iz, 3] = (new HalfFloat(atlasZ)).Data;
+#if LOD0_RGBA16F
+                        zeroLodData[ix, iy, iz, 0] = (new HalfFloat(cell.Item1)).Data;//(new HalfFloat(cell.Item1 * 0.5f + 0.5f)).Data;
+                        zeroLodData[ix, iy, iz, 1] = (new HalfFloat(atlasX / 255.0f)).Data;
+                        zeroLodData[ix, iy, iz, 2] = (new HalfFloat(atlasY / 255.0f)).Data;
+                        zeroLodData[ix, iy, iz, 3] = (new HalfFloat(atlasZ / 255.0f)).Data;
+#else
+                        float dist = cell.Item1 * 127.5f;
+                        dist = Math.Sign(dist) * (float)Math.Floor((float)Math.Abs(dist));
+                        zeroLodData[ix, iy, iz, 0] =
+                            //(byte)(Math.Min(Math.Abs(cell.Item1) * 255, 255));
+                            (byte)Math.Max(Math.Min(dist + 127, 255), 0);
+                        zeroLodData[ix, iy, iz, 1] = (byte)(atlasX);
+                        zeroLodData[ix, iy, iz, 2] = (byte)(atlasY);
+                        zeroLodData[ix, iy, iz, 3] = (byte)(atlasZ);
+#endif
                     }
 
-            Helper.SaveKTX(/*0x805B*/0x881A/*0x822C*/, zeroLodData.Width, zeroLodData.Height, zeroLodData.Depth, zeroLodData.Data, Path.GetFileNameWithoutExtension(outFile) + "_lod_0.ktx"); ; // GL_RGBA16 /*GL_RG16*/
-            Helper.SaveKTX(0x881A, partialData.Width, partialData.Height, partialData.Depth, partialData.Data, Path.GetFileNameWithoutExtension(outFile) + "_lod_hi.ktx");
+            Helper.SaveKTX(
+#if LOD0_RGBA16F
+                Helper.KTX_RGBA16F,
+#else
+                Helper.KTX_RGBA8,
+#endif
+                zeroLodData.Width, zeroLodData.Height, zeroLodData.Depth, zeroLodData.Data, Path.GetFileNameWithoutExtension(outFile) + "_lod_0.ktx");
+            Helper.SaveKTX(Helper.KTX_RGBA16F, partialData.Width, partialData.Height, partialData.Depth, partialData.Data, Path.GetFileNameWithoutExtension(outFile) + "_lod_hi.ktx");
 
             Console.WriteLine("[{0}] KTX saved, saving boundary mesh", sw.Elapsed);
 

@@ -1,4 +1,6 @@
-﻿using System;
+﻿#define DONT_USE_EARLY_EXIT
+
+using System;
 using System.Collections.Generic;
 using System.Numerics;
 
@@ -175,6 +177,7 @@ namespace SDFTool
                     //if (weights.X < 0 || weights.Y < 0 || weights.Z < 0 || weights.X > 1 || weights.Y > 1 || weights.Z > 1)
                     //Console.WriteLine("Weights are invalid!");
                     return false;
+                    //break;
                 }
 #endif
                 // check is cells are outside of the grid
@@ -239,25 +242,38 @@ namespace SDFTool
                     localDist = distance / m_gridStep + 1.73205080757f / 2; // half of cubic root of two
             }
 
-            sign = CountIntersections(point, Vector3.Normalize(point - result)) % 2 == 0 ? 1 : -1;
-            //int count = 0;
+            sign = 0;
             
-            Vector3[] dirs = new Vector3[] { new Vector3(0, 0, 1), new Vector3(1, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 0, -1), new Vector3(-1, 0, 0), new Vector3(0, -1, 0) };
+            Vector3[] dirs = new Vector3[] {
+                Vector3.Normalize(point - result),
+#if EXTRA_VECTORS
+                Vector3.Normalize(result - point),
+                Vector3.Normalize(point - new Vector3(0, 0, 0)),
+                Vector3.Normalize(new Vector3(1, 1, 1) - point),
+                Vector3.Normalize(new Vector3(0.5f, 0.5f, 0.5f) - point),
+#endif
+                new Vector3(0, 0, 1),
+                new Vector3(1, 0, 0),
+                new Vector3(0, 1, 0),
+                new Vector3(0, 0, -1),
+                new Vector3(-1, 0, 0),
+                new Vector3(0, -1, 0)
+            };
 
             foreach (Vector3 dir in dirs)
             {
-                sign += CountIntersections(point, dir) % 2 == 0 ? 1 : -1;
+                Vector3 direction = dir;
 
-                if (Math.Abs(sign) >= 4) // no point for further checks
+                if (float.IsNaN(direction.X) || float.IsNaN(direction.Y) || float.IsNaN(direction.Z))
+                    direction = Vector3.Normalize(new Vector3(1, 1, 1));
+
+                sign += CountIntersections(point, direction) % 2 == 0 ? 1 : -1;
+
+                if (Math.Abs(sign) >= dirs.Length / 2 + 1) // no point for further checks
                     break;
-                //count++;
             }
 
             sign = sign >= 0 ? 1 : -1;
-
-            //sign = CountIntersections(point, Vector3.Normalize(point - anyTriangle.Center)) % 2 == 0 ? 1 : -1;
-            //sign = CountIntersections(point, Vector3.Normalize(point - result)) % 2 == 0 ? 1 : -1;
-            //sign = InsideCheck(point, Vector3.Normalize(point - result)) ? -1 : 1;
 
             distance *= sign;
 
@@ -270,9 +286,6 @@ namespace SDFTool
         public int CountIntersections(Vector3 point, Vector3 dir)
         {
             int count = 0;
-
-            if (float.IsNaN(dir.X) || float.IsNaN(dir.Y) || float.IsNaN(dir.Z))
-                dir = Vector3.Normalize(new Vector3(1, 1, 1));
 
             Vector3 idir = new Vector3(1.0f / dir.X, 1.0f / dir.Y, 1.0f / dir.Z);
             Vector3 localPoint = (point - m_sceneMin) / m_gridStep;

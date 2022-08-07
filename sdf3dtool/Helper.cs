@@ -8,6 +8,11 @@ namespace SDFTool
     /// </summary>
     public static class Helper
     {
+        public const int KTX_RGBA16F = 0x881A;
+        public const int KTX_RGBA16 = 0x805B;
+        public const int KTX_RG16 = 0x822C;
+        public const int KTX_RGBA8 = 0x8058;
+
         /// <summary>
         /// Saves a 3d texture to KTX format with each pixel being a set of 4 ushort values
         /// </summary>
@@ -26,7 +31,7 @@ namespace SDFTool
             {
                 writer.Write(new byte[] { 0xAB, 0x4B, 0x54, 0x58, 0x20, 0x31, 0x31, 0xBB, 0x0D, 0x0A, 0x1A, 0x0A });
                 writer.Write(0x04030201);
-                writer.Write(0x140B); // raw type
+                writer.Write(0x140B); // raw type. 0x140B = GL_HALF_FLOAT
                 writer.Write(2); // raw size
                 writer.Write(format); // raw format
                 writer.Write(format); // format
@@ -43,6 +48,47 @@ namespace SDFTool
                     writer.Write(0);
 
                 writer.Write(data.Length * 2); // current mipmap size
+
+                for (int i = 0; i < data.Length; i++)
+                    writer.Write(data[i]);
+            }
+        }
+
+        /// <summary>
+        /// Saves a 3d texture to KTX format with each pixel being a set of 4 ushort values
+        /// </summary>
+        /// <param name="format"></param>
+        /// <param name="width"></param>
+        /// <param name="height"></param>
+        /// <param name="depth"></param>
+        /// <param name="data"></param>
+        /// <param name="outfile"></param>
+        public static void SaveKTX(int format, int width, int height, int depth, byte[] data, string outfile)
+        {
+            string file = Path.GetFileNameWithoutExtension(outfile) + ".ktx";
+
+            using (Stream stream = File.Open(file, FileMode.Create, FileAccess.Write, FileShare.None))
+            using (BinaryWriter writer = new BinaryWriter(stream))
+            {
+                writer.Write(new byte[] { 0xAB, 0x4B, 0x54, 0x58, 0x20, 0x31, 0x31, 0xBB, 0x0D, 0x0A, 0x1A, 0x0A });
+                writer.Write(0x04030201);
+                writer.Write(0x1401); // raw type. 0x1401 = GL_UNSIGNED_BYTE
+                writer.Write(1); // raw size
+                writer.Write(format); // raw format
+                writer.Write(format); // format
+                writer.Write(0x1908); // rgba?
+                writer.Write(width);
+                writer.Write(height);
+                writer.Write(depth);
+                writer.Write(0); // elements
+                writer.Write(1); // faces
+                writer.Write(1); // mipmaps
+                writer.Write(0); // metadata
+
+                while (writer.BaseStream.Length < 64 + 0) // header + metadata size
+                    writer.Write(0);
+
+                writer.Write(data.Length); // current mipmap size
 
                 for (int i = 0; i < data.Length; i++)
                     writer.Write(data[i]);
