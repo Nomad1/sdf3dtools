@@ -1,4 +1,5 @@
-﻿#define DONT_USE_EARLY_EXIT
+﻿//#define DONT_USE_EARLY_EXIT
+//#define EXTRA_VECTORS
 
 using System;
 using System.Collections.Generic;

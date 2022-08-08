@@ -80,9 +80,6 @@ namespace SDFTool
             // number of extra pixels on the each size
             int padding = 2;
 
-            /*int sx = (int)Math.Ceiling((sceneMax.X - sceneMin.X) / step) + padding * 2;
-            int sy = (int)Math.Ceiling((sceneMax.Y - sceneMin.Y) / step) + padding * 2;
-            int sz = (int)Math.Ceiling((sceneMax.Z - sceneMin.Z) / step) + padding * 2;*/
             int sx = (int)Math.Ceiling(sceneMax.X / step) - (int)Math.Floor(sceneMin.X / step) + padding * 2;
             int sy = (int)Math.Ceiling(sceneMax.Y / step) - (int)Math.Floor(sceneMin.Y / step) + padding * 2;
             int sz = (int)Math.Ceiling(sceneMax.Z / step) - (int)Math.Floor(sceneMin.Z / step) + padding * 2;
@@ -127,7 +124,6 @@ namespace SDFTool
                 float distance;
                 Vector triangleWeights;
                 object triangleData;
-                Vector3i cellId = new Vector3i(ix / cellSize, iy / cellSize, iz / cellSize);
 
                 float distancePercentage;
 
@@ -214,32 +210,6 @@ namespace SDFTool
                         float minDistance = float.MaxValue;
                         float distancePercentage = 0.0f;
 
-
-                        /*values.Clear();
-                        float totalWeight = 0.0f;
-
-                        for (int z = 0; z < paddedCellSize; z++)
-                            for (int y = 0; y < paddedCellSize; y++)
-                                for (int x = 0; x < paddedCellSize; x++)
-                                {
-                                    float distance = block[x, y, z, 0];
-
-                                    if (Math.Abs(distance) < Math.Abs(minDistance))
-                                        minDistance = distance;
-
-                                    float weight = cellCenterDistance - Vector.Distance(cellCenter, new Vector(x, y, z));
-                                    totalWeight += weight;
-
-                                    values.Add(new Tuple<float, float>(weight, distance));
-                                }
-
-
-                        foreach (var pair in values)
-                            distancePercentage += pair.Item2 * pair.Item1 / totalWeight;
-                        
-                        distancePercentage = block[paddedCellSize/2, paddedCellSize/2, paddedCellSize/2, 0];
-                        */
-
                         for (int i = 0; i < block.Data.Length; i += 4)
                         {
                             float distance = block.Data[i];
@@ -248,9 +218,8 @@ namespace SDFTool
                         }
 
                         distancePercentage = block[paddedCellSize / 2, paddedCellSize / 2, paddedCellSize / 2, 0];
-                        //distancePercentage = minDistance;
 
-                        if (Math.Abs(minDistance) < emptyCellCheckDistance)// || (int)(distancePercentage * 127) == 0)
+                        if (Math.Abs(minDistance) < emptyCellCheckDistance || Math.Abs(distancePercentage) < emptyCellCheckDistance * 2.0f)
                         {
                             usedCells++;
                         }
@@ -329,15 +298,11 @@ namespace SDFTool
                         zeroLodData[ix, iy, iz, 2] = (new HalfFloat(atlasY / 255.0f)).Data;
                         zeroLodData[ix, iy, iz, 3] = (new HalfFloat(atlasZ / 255.0f)).Data;
 #else
-                        //float dist = cell.Item1 * 127.5f;
-                        //dist = Math.Sign(dist) * (float)Math.Floor((float)Math.Abs(dist));
                         zeroLodData[ix, iy, iz, 0] =
-                        //(byte)(Math.Min(Math.Abs(cell.Item1) * 255, 255));
-                        //(byte)Math.Max(Math.Min(dist + 127, 255), 0);
                             (byte)(Math.Max(0, Math.Min(255, (cell.Item1 * 0.5f + 0.5f) * 255)));
 
                         if (zeroLodData[ix, iy, iz, 0] == 0x7f && atlasX == 0 && atlasY == 0 && atlasZ == 0)
-                            zeroLodData[ix, iy, iz, 0] = (byte)0x80;
+                            zeroLodData[ix, iy, iz, 0] = 0x80; // we need it to be at least a bit positive
 
                         zeroLodData[ix, iy, iz, 1] = (byte)(atlasX);
                         zeroLodData[ix, iy, iz, 2] = (byte)(atlasY);
