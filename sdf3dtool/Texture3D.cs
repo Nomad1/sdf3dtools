@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 
 namespace SDFTool
 {
-    public class Texture3D<T> where T:struct
+    public class Array3D<T> where T:struct
     {
         private readonly int m_components;
         private readonly int m_width;
@@ -67,7 +67,7 @@ namespace SDFTool
             }
         }
 
-        public Texture3D(int components, int width, int height, int depth)
+        public Array3D(int components, int width, int height, int depth)
         {
             m_width = width;
             m_height = height;
@@ -81,11 +81,11 @@ namespace SDFTool
             return x >= 0 && x < m_width && y >= 0 && y < m_height && z >= 0 && z < m_depth;
         }
 
-        public Texture3D<T> GetBlock(int fromx, int fromy, int fromz, int w, int h, int d, T[] defaultValue)
+        public Array3D<T> GetBlock(int fromx, int fromy, int fromz, int w, int h, int d, T[] defaultValue)
         {
-            Debug.Assert(defaultValue.Length == m_components);
+            Debug.Assert(defaultValue.Length >= m_components);
 
-            Texture3D<T> result = new Texture3D<T>(m_components, w, h, d);
+            Array3D<T> result = new Array3D<T>(m_components, w, h, d);
 
             for (int nz = 0; nz < d; nz++)
             {
@@ -114,7 +114,7 @@ namespace SDFTool
             return result;
         }
 
-        public void PutBlock(Texture3D<T> block, int tox, int toy, int toz)
+        public void PutBlock(Array3D<T> block, int tox, int toy, int toz)
         {
             for (int nz = 0; nz < block.Depth; nz++)
             {
@@ -132,7 +132,7 @@ namespace SDFTool
                 }
             }
         }
-        public void PutBlock<K>(Texture3D<K> block, int tox, int toy, int toz, Func<K,T> processor) where K : struct
+        public void PutBlock<K>(Array3D<K> block, int tox, int toy, int toz, Func<K,T> processor) where K : struct
         {
             for (int nz = 0; nz < block.Depth; nz++)
             {

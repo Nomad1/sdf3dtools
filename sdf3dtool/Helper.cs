@@ -11,6 +11,9 @@ namespace SDFTool
         public const int KTX_RGBA16F = 0x881A;
         public const int KTX_RGBA16 = 0x805B;
         public const int KTX_RG16 = 0x822C;
+        public const int KTX_RG16F = 0x822F;
+        public const int KTX_R16F = 0x822D;
+        public const int KTX_R8 = 0x1903;
         public const int KTX_RGBA8 = 0x8058;
 
         /// <summary>
@@ -24,7 +27,7 @@ namespace SDFTool
         /// <param name="outfile"></param>
         public static void SaveKTX(int format, int width, int height, int depth, ushort[] data, string outfile)
         {
-            string file = Path.GetFileNameWithoutExtension(outfile) + ".ktx";
+            string file = outfile.EndsWith(".ktx") ? outfile : (Path.GetFileNameWithoutExtension(outfile) + ".ktx");
 
             using (Stream stream = File.Open(file, FileMode.Create, FileAccess.Write, FileShare.None))
             using (BinaryWriter writer = new BinaryWriter(stream))
