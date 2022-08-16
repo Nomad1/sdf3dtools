@@ -83,7 +83,7 @@ namespace SDFTool
 
         public Array3D<T> GetBlock(int fromx, int fromy, int fromz, int w, int h, int d, T[] defaultValue)
         {
-            Debug.Assert(defaultValue.Length >= m_components);
+            Debug.Assert(defaultValue == null || defaultValue.Length >= m_components);
 
             Array3D<T> result = new Array3D<T>(m_components, w, h, d);
 
@@ -100,7 +100,7 @@ namespace SDFTool
                         if (!IsValidCoord(bx, by, bz))
                         {
                             for (int nc = 0; nc < m_components; nc++)
-                                result[nx, ny, nz, nc] = defaultValue[nc];
+                                result[nx, ny, nz, nc] = defaultValue == null ? this[0, 0, 0, nc] : defaultValue[nc];
                         }
                         else
                         {

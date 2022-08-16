@@ -1,4 +1,5 @@
-﻿//#define LOD0_RGBA16F
+﻿#define LOD0_8BIT
+#define LOD2_8BIT
 
 using System;
 using System.Collections.Generic;
@@ -15,10 +16,10 @@ namespace SDFTool
 {
     static class Program
     {
-        private static readonly string s_syntax = "Syntax: {0} input.dae output.png\n" +
+        private static readonly string s_syntax = "Syntax: {0} input.dae output.ktx [grid_cells] [lod_0_size] [lod_1_cell_size]\n" +
         "\n";
 
-        private static void ProcessAssimpImport(string fileName, string outFile, int gridCellCount = 32, int lod0pixels = 64, int lod1cellSize = 8)
+        private static void ProcessAssimpImport(string fileName, string outFile, int gridCellCount = 64, int lod0pixels = 32, int lod1cellSize = 4)
         {
             Debug.Assert(lod1cellSize % 2 != 0, "Lod 1 cell size should be even!");
 
@@ -101,25 +102,28 @@ namespace SDFTool
 
             if (sx % lod2cellSize != 0)
                 sx += lod2cellSize - sx % lod2cellSize;
+            sx++;
             if (sy % lod2cellSize != 0)
                 sy += lod2cellSize - sy % lod2cellSize;
+            sy++;
             if (sz % lod1cellSize != 0)
                 sz += lod2cellSize - sz % lod2cellSize;
+            sz++;
 
             Vector lowerBound = new Vector(-step * lod2padding) + sceneMin;
             Vector upperBound = new Vector(step * lod2padding) + sceneMax; // new Vector(sx, sy, sz) * step + lowerBound;
 
             float maximumDistance =
-                Math.Max(Math.Max(sceneMax.X - sceneMin.X, sceneMax.Y - sceneMin.Y), sceneMax.Z - sceneMin.Z);
-                //Vector.Distance(sceneMax, sceneMin);
+                //Math.Max(Math.Max(sceneMax.X - sceneMin.X, sceneMax.Y - sceneMin.Y), sceneMax.Z - sceneMin.Z);
+                Vector.Distance(sceneMax, sceneMin);
 
             Array3D<float> data = new Array3D<float>(3, sx, sy, sz); // we are using lod 2 data for processing
 
             Console.WriteLine("[{0}] File preprocessed. X: {1}, Y: {2}, Z: {3}", sw.Elapsed, sx, sy, sz);
 
-            float emptyCellCheckDistance =
-                step * 0.5f / maximumDistance;
-                //step * 0.5f / maximumDistance;// * 0.5f;// (float)Math.Sqrt(2) * 0.5f;// cellSize * step * 0.05f;// * (float)Math.Sqrt(2) * 0.5f;
+            float emptyCellCheckDistance = step * 1.73205080757f / maximumDistance;
+            float emptyCellDistance = step * 0.5f / maximumDistance;
+            //step * 0.5f / maximumDistance;// * 0.5f;// (float)Math.Sqrt(2) * 0.5f;// cellSize * step * 0.05f;// * (float)Math.Sqrt(2) * 0.5f;
 
             Iterate(0, sz * sy * sx, (i) =>
             {
@@ -200,9 +204,9 @@ namespace SDFTool
             // split to cells
 
             int usedCells = 0;
-            int cellsx = (int)Math.Ceiling(sx / (float)(lod1cellSize * 2.0f));
-            int cellsy = (int)Math.Ceiling(sy / (float)(lod1cellSize * 2.0f));
-            int cellsz = (int)Math.Ceiling(sz / (float)(lod1cellSize * 2.0f));
+            int cellsx = (int)Math.Floor(sx / (float)(lod2cellSize));
+            int cellsy = (int)Math.Floor(sy / (float)(lod2cellSize));
+            int cellsz = (int)Math.Floor(sz / (float)(lod2cellSize));
 
             int totalCells = cellsx * cellsy * cellsz;
             int paddedLod1cellSize = lod1cellSize + 1;
@@ -212,36 +216,53 @@ namespace SDFTool
             Tuple<float, Array3D<float>>[] cells = new Tuple<float, Array3D<float>>[totalCells];
             //List<Tuple<float, float>> values = new List<Tuple<float, float>>(paddedCellSize * paddedCellSize * paddedCellSize);
 
-            Vector cellCenter = new Vector(paddedLod1cellSize, paddedLod1cellSize, paddedLod1cellSize) * 0.5f;
-            float cellCenterDistance = cellCenter.Length();
-
             for (int iz = 0; iz < cellsz; iz++)
                 for (int iy = 0; iy < cellsy; iy++)
                     for (int ix = 0; ix < cellsx; ix++)
                     {
                         int index = ix + iy * cellsx + iz * cellsx * cellsy;
 
-                        Array3D<float> block = data.GetBlock(ix * lod2cellSize, iy * lod2cellSize, iz * lod2cellSize, paddedLod2cellSize, paddedLod2cellSize, paddedLod2cellSize, new float[] { emptyCellCheckDistance, 0, 0, 0, 0, 0, 0, 0, 0, 0 });
+                        Array3D<float> block = data.GetBlock(ix * lod2cellSize, iy * lod2cellSize, iz * lod2cellSize, paddedLod2cellSize, paddedLod2cellSize, paddedLod2cellSize, new float[] { float.MaxValue, 0, 0, 0, 0, 0, 0, 0, 0, 0 });
 
                         float minDistance = float.MaxValue;
-                        float distancePercentage = 0.0f;
+                        float minCellDistance = float.MaxValue;
+
+                        for (int z = 0; z < block.Depth; z++)
+                            for (int y = 0; y < block.Height; y++)
+                                for (int x = 0; x < block.Width; x++)
+                                //for (int i = 0; i < block.Data.Length; i += block.Components)
+                                {
+                                    float distance = block[x, y, z, 0];
+
+                                    if (Math.Abs(distance) < Math.Abs(minDistance))
+                                        minDistance = distance;
+
+                                    if (Math.Abs(distance) < Math.Abs(minCellDistance) && z < lod2cellSize && y < lod2cellSize && x < lod2cellSize)
+                                        minCellDistance = distance;
+
+                                    //if (distance == float.MaxValue)
+                                        //block[x, y, z, 0] = emptyCellDistance;
+                                }
 
                         for (int i = 0; i < block.Data.Length; i += block.Components)
-                        {
-                            float distance = block.Data[i];
-                            if (Math.Abs(distance) < Math.Abs(minDistance))
-                                minDistance = distance;
-                        }
+                            if (block[i] == float.MaxValue)
+                                block[i] = minDistance;
 
-                        distancePercentage = block[paddedLod2cellSize / 2, paddedLod2cellSize / 2, paddedLod2cellSize / 2, 0];
+                        float distancePercentage = block[paddedLod2cellSize / 2, paddedLod2cellSize / 2, paddedLod2cellSize / 2, 0]; // central point
 
-                        if (Math.Abs(minDistance) < emptyCellCheckDistance || Math.Abs(distancePercentage) < emptyCellCheckDistance * 2.0f)
+                        if (Math.Abs(minDistance) < emptyCellCheckDistance)
                         {
                             usedCells++;
                         }
                         else
                         {
                             block = null;
+                            //if (minCellDistance == float.MaxValue)
+                                //minCellDistance = emptyCellDistance;
+
+                                //distancePercentage = minCellDistance;
+                            //if (Math.Abs(minCellDistance) < Math.Abs(distancePercentage))
+                                //distancePercentage = minCellDistance;
                         }
 
                         cells[index] = new Tuple<float, Array3D<float>>(distancePercentage, block);
@@ -254,7 +275,11 @@ namespace SDFTool
             FindBestDividers(usedCells + 1, out packx, out packy, out packz, 256);
 
             Array3D<byte> lod1distance = new Array3D<byte>(1, packx * paddedLod1cellSize, packy * paddedLod1cellSize, packz * paddedLod1cellSize);
+#if LOD2_8BIT
             Array3D<byte> lod2distance = new Array3D<byte>(1, packx * paddedLod2cellSize, packy * paddedLod2cellSize, packz * paddedLod2cellSize);
+#else
+            Array3D<ushort> lod2distance = new Array3D<ushort>(1, packx * paddedLod2cellSize, packy * paddedLod2cellSize, packz * paddedLod2cellSize);
+#endif
 
             Array3D<ushort> lod0uv = new Array3D<ushort>(2, cellsx, cellsy, cellsz);
             Array3D<ushort> lod1uv = new Array3D<ushort>(2, packx * paddedLod1cellSize, packy * paddedLod1cellSize, packz * paddedLod1cellSize);
@@ -277,13 +302,13 @@ namespace SDFTool
             //ushort[] partialData = new ushort[paddedCellSize * paddedCellSize * paddedCellSize * usedCells.Count * 4];
             int partialCells = 0;
 
-            float packLod1Coef = Math.Max(Math.Max(cellsx, cellsz), cellsz); //lod1cellSize*1.73205080757f*2;
-            float packLod2Coef = Math.Max(Math.Max(cellsx, cellsz), cellsz);//lod2cellSize*1.73205080757f*2;
+            float packLod1Coef = lod0pixels;
+            float packLod2Coef = lod0pixels;
 
-#if LOD0_RGBA16F
-            Texture3D<ushort> zeroLodData = new Texture3D<ushort>(4, cellsx, cellsy, cellsz);
-#else
+#if LOD0_8BIT
             Array3D<byte> zeroLodData = new Array3D<byte>(4, cellsx, cellsy, cellsz);
+#else
+            Array3D<ushort> zeroLodData = new Array3D<ushort>(4, cellsx, cellsy, cellsz);
 #endif
             for (int iz = 0; iz < cellsz; iz++)
                 for (int iy = 0; iy < cellsy; iy++)
@@ -338,12 +363,18 @@ namespace SDFTool
                                             lod1uvBlock[x / 2, y / 2, z / 2, 1] = v;
                                         }
                                     }
-
+#if LOD0_8BIT
                             byte distByte = PackFloatToSByte(cell.Item1);
                             float dist = (distByte / 255.0f) * 2.0f - 1.0f;
-
+#else
+                            float dist = cell.Item1;
+#endif
                             lod1distance.PutBlock(lod1distanceBlock, atlasX * paddedLod1cellSize, atlasY * paddedLod1cellSize, atlasZ * paddedLod1cellSize, (k) => PackFloatToSByte((k - dist) * packLod1Coef));
+#if LOD2_8BIT
                             lod2distance.PutBlock(lod2distanceBlock, atlasX * paddedLod2cellSize, atlasY * paddedLod2cellSize, atlasZ * paddedLod2cellSize, (k) => PackFloatToSByte((k - dist) * packLod2Coef));
+#else
+                            lod2distance.PutBlock(lod2distanceBlock, atlasX * paddedLod2cellSize, atlasY * paddedLod2cellSize, atlasZ * paddedLod2cellSize, (k) => PackFloatToUShort((k - dist) * packLod2Coef/* * 0.5f + 0.5f*/));
+#endif
 
                             lod1uv.PutBlock(lod1uvBlock, atlasX * paddedLod1cellSize, atlasY * paddedLod1cellSize, atlasZ * paddedLod1cellSize, PackFloatToUShort);
                             lod2uv.PutBlock(lod2uvBlock, atlasX * paddedLod2cellSize, atlasY * paddedLod2cellSize, atlasZ * paddedLod2cellSize, PackFloatToUShort);
@@ -352,33 +383,36 @@ namespace SDFTool
                             lod0uv[ix, iy, iz, 1] = PackFloatToUShort(cell.Item2[paddedLod2cellSize / 2, paddedLod2cellSize / 2, paddedLod2cellSize / 2, 2]);
                         }
 
-#if LOD0_RGBA16F
-                        zeroLodData[ix, iy, iz, 0] = (new HalfFloat(cell.Item1)).Data;//(new HalfFloat(cell.Item1 * 0.5f + 0.5f)).Data;
-                        zeroLodData[ix, iy, iz, 1] = (new HalfFloat(atlasX / 255.0f)).Data;
-                        zeroLodData[ix, iy, iz, 2] = (new HalfFloat(atlasY / 255.0f)).Data;
-                        zeroLodData[ix, iy, iz, 3] = (new HalfFloat(atlasZ / 255.0f)).Data;
-#else
+#if LOD0_8BIT
                         zeroLodData[ix, iy, iz, 0] = PackFloatToSByte(cell.Item1);
-
-                        if (zeroLodData[ix, iy, iz, 0] == 0x7f && atlasX == 0 && atlasY == 0 && atlasZ == 0)
-                            zeroLodData[ix, iy, iz, 0] = 0x80; // we need it to be at least a bit positive
 
                         zeroLodData[ix, iy, iz, 1] = (byte)(atlasX);
                         zeroLodData[ix, iy, iz, 2] = (byte)(atlasY);
                         zeroLodData[ix, iy, iz, 3] = (byte)(atlasZ);
+#else
+                        zeroLodData[ix, iy, iz, 0] = (new HalfFloat(cell.Item1/* * 0.5f + 0.5f*/)).Data;//(new HalfFloat(cell.Item1 * 0.5f + 0.5f)).Data;
+                        zeroLodData[ix, iy, iz, 1] = (new HalfFloat(atlasX / 255.0f)).Data;
+                        zeroLodData[ix, iy, iz, 2] = (new HalfFloat(atlasY / 255.0f)).Data;
+                        zeroLodData[ix, iy, iz, 3] = (new HalfFloat(atlasZ / 255.0f)).Data;
 #endif
                     }
 
             Helper.SaveKTX(
-#if LOD0_RGBA16F
-                Helper.KTX_RGBA16F,
-#else
+#if LOD0_8BIT
                 Helper.KTX_RGBA8,
+#else
+                Helper.KTX_RGBA16F,
 #endif
                 zeroLodData.Width, zeroLodData.Height, zeroLodData.Depth, zeroLodData.Data, Path.GetFileNameWithoutExtension(outFile) + "_lod_0.3d.ktx");
 
             Helper.SaveKTX(Helper.KTX_R8, lod1distance.Width, lod1distance.Height, lod1distance.Depth, lod1distance.Data, Path.GetFileNameWithoutExtension(outFile) + "_lod_1.3d.ktx");
-            Helper.SaveKTX(Helper.KTX_R8, lod2distance.Width, lod2distance.Height, lod2distance.Depth, lod2distance.Data, Path.GetFileNameWithoutExtension(outFile) + "_lod_2.3d.ktx");
+            Helper.SaveKTX(
+#if LOD2_8BIT
+                Helper.KTX_R8,
+#else
+                Helper.KTX_R16F,
+#endif
+                lod2distance.Width, lod2distance.Height, lod2distance.Depth, lod2distance.Data, Path.GetFileNameWithoutExtension(outFile) + "_lod_2.3d.ktx");
 
             Helper.SaveKTX(Helper.KTX_RG16F, lod0uv.Width, lod0uv.Height, lod0uv.Depth, lod0uv.Data, Path.GetFileNameWithoutExtension(outFile) + "_lod_0_uv.3d.ktx");
             Helper.SaveKTX(Helper.KTX_RG16F, lod1uv.Width, lod1uv.Height, lod1uv.Depth, lod1uv.Data, Path.GetFileNameWithoutExtension(outFile) + "_lod_1_uv.3d.ktx");
@@ -635,7 +669,7 @@ namespace SDFTool
             }
 
             int gridSize = args.Length > 2 ? int.Parse(args[2]) : 64;
-            int size = args.Length > 3 ? int.Parse(args[3]) : 64;
+            int size = args.Length > 3 ? int.Parse(args[3]) : 32;
             int cellSize = args.Length > 4 ? int.Parse(args[4]) : 4;
 
             ProcessAssimpImport(fileName, outFileName, gridSize, size, cellSize);

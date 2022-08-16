@@ -46,7 +46,7 @@
     <Compile Include="TriangleMap.cs" />
     <Compile Include="MeshGenerator.cs" />
     <Compile Include="Helper.cs" />
-    <Compile Include="Texture3D.cs" />
+    <Compile Include="Array3D.cs" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Properties\" />
