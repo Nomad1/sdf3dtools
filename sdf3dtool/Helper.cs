@@ -1,6 +1,12 @@
 ﻿using System;
 using System.IO;
 
+#if USE_SYSTEM_DRAWING
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
+#endif
+
 namespace SDFTool
 {
     /// <summary>
@@ -320,6 +326,35 @@ namespace SDFTool
             }
         }
 
-    }
+#if USE_SYSTEM_DRAWING
+        public static int[] LoadBitmap(string file, out int width, out int height)
+        {
+            int[] buffer;
+            using (Bitmap image = new Bitmap(file))
+            {
+
+                width = image.Width;
+                height = image.Height;
+
+                BitmapData bitmapdata = image.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+
+                buffer = new int[bitmapdata.Width * bitmapdata.Height];
+
+                Marshal.Copy(bitmapdata.Scan0, buffer, 0, buffer.Length);
+
+                image.UnlockBits(bitmapdata);
+
+                image.Dispose();
+            }
+
+            return buffer;
+        }
+#else
+        public static int[] LoadBitmap(string file, out int width, out int height)
+        {
+            throw new NotImplementedException();
+        }
+#endif
+}
 }
 

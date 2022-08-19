@@ -19,7 +19,7 @@ namespace SDFTool
         private static readonly string s_syntax = "Syntax: {0} input.dae output.ktx [grid_cells] [lod_0_size] [lod_1_cell_size]\n" +
         "\n";
 
-        private static void ProcessAssimpImport(string fileName, string outFile, int gridCellCount = 64, int lod0pixels = 32, int lod1cellSize = 4)
+        private static void ProcessAssimpImport(string fileName, string outFile, string textureFile = null, int gridCellCount = 64, int lod0pixels = 32, int lod1cellSize = 4)
         {
             Debug.Assert(lod1cellSize % 2 != 0, "Lod 1 cell size should be even!");
 
@@ -33,6 +33,10 @@ namespace SDFTool
             Scene scene = importer.ImportFile(fileName, PostProcessPreset.TargetRealTimeMaximumQuality);
 
             Console.WriteLine("[{0}] File loaded", sw.Elapsed);
+
+            int textureWidth = 0;
+            int textureHeight = 0;
+            int[] texture = textureFile == null ? null : Helper.LoadBitmap(textureFile, out textureWidth, out textureHeight);
 
             float scale = 1;
 
@@ -186,8 +190,10 @@ namespace SDFTool
                             data[ix, iy, iz, 2] = tc.Y;
                         }
 
-                        // TODO: indices 3+4,5+6,6+7,7+8 should be weights for the bones and bone numbers
-                        // TODO: 3 more indices could be RGB colors if we want to generate a color map
+                        // TODO: 3,4,5,6 are RGBA colors
+                        // TODO: indices 7+ should be weights for the bones and bone numbers
+
+
 
                         //float uvdist = Math.Min(Math.Min(triangleWeights.X, triangleWeights.Y), triangleWeights.Z);
                         //data[ix, iy, iz, 3] = 0.5f - uvdist;
@@ -225,7 +231,6 @@ namespace SDFTool
                         Array3D<float> block = data.GetBlock(ix * lod2cellSize, iy * lod2cellSize, iz * lod2cellSize, paddedLod2cellSize, paddedLod2cellSize, paddedLod2cellSize, new float[] { float.MaxValue, 0, 0, 0, 0, 0, 0, 0, 0, 0 });
 
                         float minDistance = float.MaxValue;
-                        float minCellDistance = float.MaxValue;
 
                         for (int z = 0; z < block.Depth; z++)
                             for (int y = 0; y < block.Height; y++)
@@ -236,13 +241,15 @@ namespace SDFTool
 
                                     if (Math.Abs(distance) < Math.Abs(minDistance))
                                         minDistance = distance;
-
-                                    if (Math.Abs(distance) < Math.Abs(minCellDistance) && z < lod2cellSize && y < lod2cellSize && x < lod2cellSize)
-                                        minCellDistance = distance;
-
-                                    //if (distance == float.MaxValue)
-                                        //block[x, y, z, 0] = emptyCellDistance;
                                 }
+                                    /*
+                                    for (int i = 0; i < block.Data.Length; i += block.Components)
+                        {
+                            float distance = block.Data[i];
+
+                            if (Math.Abs(distance) < Math.Abs(minDistance))
+                                minDistance = distance;
+                        }*/
 
                         for (int i = 0; i < block.Data.Length; i += block.Components)
                             if (block[i] == float.MaxValue)
@@ -257,12 +264,6 @@ namespace SDFTool
                         else
                         {
                             block = null;
-                            //if (minCellDistance == float.MaxValue)
-                                //minCellDistance = emptyCellDistance;
-
-                                //distancePercentage = minCellDistance;
-                            //if (Math.Abs(minCellDistance) < Math.Abs(distancePercentage))
-                                //distancePercentage = minCellDistance;
                         }
 
                         cells[index] = new Tuple<float, Array3D<float>>(distancePercentage, block);
@@ -284,6 +285,8 @@ namespace SDFTool
             Array3D<ushort> lod0uv = new Array3D<ushort>(2, cellsx, cellsy, cellsz);
             Array3D<ushort> lod1uv = new Array3D<ushort>(2, packx * paddedLod1cellSize, packy * paddedLod1cellSize, packz * paddedLod1cellSize);
             Array3D<ushort> lod2uv = new Array3D<ushort>(2, packx * paddedLod2cellSize, packy * paddedLod2cellSize, packz * paddedLod2cellSize);
+
+            Array3D<byte> lod2texture = new Array3D<byte>(4, packx * paddedLod2cellSize, packy * paddedLod2cellSize, packz * paddedLod2cellSize);
 
             Console.WriteLine("[{0}] Got {1} empty cells, cell grid size {2}, {3:P}, total {4} of {5}x{5}x{5} cells, size {6} vs {7}, grid {8}x{9}x{10}",
                 sw.Elapsed, totalCells - usedCells, new Vector3i(cellsx, cellsy, cellsz), usedCells / (float)totalCells,
@@ -344,6 +347,8 @@ namespace SDFTool
                             Array3D<float> lod1uvBlock = new Array3D<float>(2, paddedLod1cellSize, paddedLod1cellSize, paddedLod1cellSize);
                             Array3D<float> lod2uvBlock = new Array3D<float>(2, paddedLod2cellSize, paddedLod2cellSize, paddedLod2cellSize);
 
+                            Array3D<byte> lod2textureBlock = new Array3D<byte>(4, paddedLod2cellSize, paddedLod2cellSize, paddedLod2cellSize);
+
                             for (int z = 0; z < cell.Item2.Depth; z++)
                                 for (int y = 0; y < cell.Item2.Height; y++)
                                     for (int x = 0; x < cell.Item2.Width; x++)
@@ -362,6 +367,16 @@ namespace SDFTool
                                             lod1uvBlock[x / 2, y / 2, z / 2, 0] = u;
                                             lod1uvBlock[x / 2, y / 2, z / 2, 1] = v;
                                         }
+
+                                        if (texture != null)
+                                        {
+                                            int textureColor = texture != null ? texture[(int)(Clamp(u * textureWidth, 0.0f, textureWidth - 1)) + ((int)Clamp((1.0f - v) * textureHeight, 0.0f, textureHeight - 1)) * textureWidth] : 0;
+
+                                            lod2textureBlock[x, y, z, 0] = (byte)(textureColor >> 16);
+                                            lod2textureBlock[x, y, z, 1] = (byte)(textureColor >> 8);
+                                            lod2textureBlock[x, y, z, 2] = (byte)(textureColor);
+                                            lod2textureBlock[x, y, z, 3] = (byte)(textureColor >> 24);
+                                        }
                                     }
 #if LOD0_8BIT
                             byte distByte = PackFloatToSByte(cell.Item1);
@@ -378,6 +393,9 @@ namespace SDFTool
 
                             lod1uv.PutBlock(lod1uvBlock, atlasX * paddedLod1cellSize, atlasY * paddedLod1cellSize, atlasZ * paddedLod1cellSize, PackFloatToUShort);
                             lod2uv.PutBlock(lod2uvBlock, atlasX * paddedLod2cellSize, atlasY * paddedLod2cellSize, atlasZ * paddedLod2cellSize, PackFloatToUShort);
+
+                            if (texture != null)
+                                lod2texture.PutBlock(lod2textureBlock, atlasX * paddedLod2cellSize, atlasY * paddedLod2cellSize, atlasZ * paddedLod2cellSize);
 
                             lod0uv[ix, iy, iz, 0] = PackFloatToUShort(cell.Item2[paddedLod2cellSize / 2, paddedLod2cellSize / 2, paddedLod2cellSize / 2, 1]);
                             lod0uv[ix, iy, iz, 1] = PackFloatToUShort(cell.Item2[paddedLod2cellSize / 2, paddedLod2cellSize / 2, paddedLod2cellSize / 2, 2]);
@@ -418,6 +436,9 @@ namespace SDFTool
             Helper.SaveKTX(Helper.KTX_RG16F, lod1uv.Width, lod1uv.Height, lod1uv.Depth, lod1uv.Data, Path.GetFileNameWithoutExtension(outFile) + "_lod_1_uv.3d.ktx");
             Helper.SaveKTX(Helper.KTX_RG16F, lod2uv.Width, lod2uv.Height, lod2uv.Depth, lod2uv.Data, Path.GetFileNameWithoutExtension(outFile) + "_lod_2_uv.3d.ktx");
 
+            if (texture != null)
+                Helper.SaveKTX(Helper.KTX_RGBA8, lod2texture.Width, lod2texture.Height, lod2texture.Depth, lod2texture.Data, Path.GetFileNameWithoutExtension(outFile) + "_lod_2_texture.3d.ktx");
+
             Console.WriteLine("[{0}] KTX saved, saving boundary mesh", sw.Elapsed);
 
             //Vector uvwScale = Vector.Normalize(new Vector(1.0f/sx, 1.0f / sy, 1.0f / sz));
@@ -444,14 +465,19 @@ namespace SDFTool
             sw.Stop();
         }
 
+        private static float Clamp(float value, float min, float max)
+        {
+            return Math.Max(min, Math.Min(max, value));
+        }
+
         private static byte PackFloatToSByte(float value)
         {
-            return (byte)(Math.Max(0, Math.Min(255, (value * 0.5f + 0.5f) * 255)));
+            return (byte)Clamp((value * 0.5f + 0.5f) * 255.0f, 0.0f, 255.0f);
         }
 
         private static byte PackFloatToByte(float value)
         {
-            return (byte)(Math.Max(0, Math.Min(255, value * 255)));
+            return (byte)Clamp(value * 255.0f, 0.0f, 255.0f);
         }
 
         private static ushort PackFloatToUShort(float value)
@@ -672,7 +698,15 @@ namespace SDFTool
             int size = args.Length > 3 ? int.Parse(args[3]) : 32;
             int cellSize = args.Length > 4 ? int.Parse(args[4]) : 4;
 
-            ProcessAssimpImport(fileName, outFileName, gridSize, size, cellSize);
+            string textureFileName = args.Length > 5 ? args[5] : null;
+
+            if (!string.IsNullOrEmpty(textureFileName) && !File.Exists(textureFileName))
+            {
+                Console.Error.WriteLine("Texture file {0} not found", textureFileName);
+                return;
+            }
+
+            ProcessAssimpImport(fileName, outFileName, textureFileName, gridSize, size, cellSize);
         }
     }
 }
