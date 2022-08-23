@@ -1,5 +1,6 @@
-﻿//#define DONT_USE_EARLY_EXIT
+﻿#define DONT_USE_EARLY_EXIT
 //#define EXTRA_VECTORS
+//#define GENERATE_UDF
 
 using System;
 using System.Collections.Generic;
@@ -144,7 +145,7 @@ namespace SDFTool
             m_nibble = nibble.ToArray();
         }
 
-        public bool FindTriangles(Vector3 point, out float distance, out Vector3 weights, out object data)
+        public bool FindTriangles(Vector3 point, out float distance, out Vector3 weights, out PreparedTriangle data)
         {
             distance = float.MaxValue;
             data = null;
@@ -163,6 +164,8 @@ namespace SDFTool
             Vector3 lb = Vector3.Zero;
             Vector3 ub = Vector3.Zero;
 
+            bool earlyExit = false;
+
             // we check farther grid cells with each step
             // stopping when a point found with a distance smaller than all remaining cells
             for (int i = 0; i < m_nibble.Length; i++)
@@ -170,17 +173,6 @@ namespace SDFTool
                 if (m_nibble[i].Length > localDist)
                     break;
 
-#if !DONT_USE_EARLY_EXIT
-                if (i >= 27 && localDist == float.MaxValue) // if this cell is solitary, meaning all neighbors are empty, we can just put in an average distance
-                {
-                    distance = m_nibble[i].Length * m_gridStep;
-                    result = m_sceneMin + new Vector3(pointx + 0.5f, pointy + 0.5f, pointz + 0.5f) * m_gridStep;
-                    //if (weights.X < 0 || weights.Y < 0 || weights.Z < 0 || weights.X > 1 || weights.Y > 1 || weights.Z > 1)
-                    //Console.WriteLine("Weights are invalid!");
-                    return false;
-                    //break;
-                }
-#endif
                 // check is cells are outside of the grid
 
                 int x = pointx + m_nibble[i].X;
@@ -195,6 +187,19 @@ namespace SDFTool
 
                 int index = x + y * m_gridx + z * m_gridx * m_gridy;
 
+
+                if (i >= 27 && localDist == float.MaxValue) // if this cell is solitary, meaning all neighbors are empty, we can just put in an average distance
+                {
+                    earlyExit = true;
+#if !DONT_USE_EARLY_EXIT
+                    distance = m_nibble[i].Length * m_gridStep;
+                    result = m_sceneMin + new Vector3(pointx + 0.5f, pointy + 0.5f, pointz + 0.5f) * m_gridStep;
+                    //if (weights.X < 0 || weights.Y < 0 || weights.Z < 0 || weights.X > 1 || weights.Y > 1 || weights.Z > 1)
+                    //Console.WriteLine("Weights are invalid!");
+                    //return false;
+                    break;
+#endif
+                }
                 // empty cells
                 if (m_triangles[index] == null)
                     continue;
@@ -235,14 +240,21 @@ namespace SDFTool
                             sign = tempSign;
 #endif
                             result = tempResult;
-                            data = triangle.Data;
+                            data = triangle;
                         }
                     }
 
                 if (distance != float.MaxValue)
                     localDist = distance / m_gridStep + 1.73205080757f / 2; // half of cubic root of two
+
+                if (earlyExit)
+                    break;
             }
 
+
+#if GENERATE_UDF
+            sign = Math.Sign(distance);
+#else
             sign = 0;
             
             Vector3[] dirs = new Vector3[] {
@@ -275,7 +287,7 @@ namespace SDFTool
             }
 
             sign = sign >= 0 ? 1 : -1;
-
+#endif
             distance *= sign;
 
             //if (weights.X < 0 || weights.Y < 0 || weights.Z < 0 || weights.X > 1 || weights.Y > 1 || weights.Z > 1)

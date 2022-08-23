@@ -121,13 +121,42 @@ namespace SDFTool
                 //Math.Max(Math.Max(sceneMax.X - sceneMin.X, sceneMax.Y - sceneMin.Y), sceneMax.Z - sceneMin.Z);
                 Vector.Distance(sceneMax, sceneMin);
 
-            Array3D<float> data = new Array3D<float>(3, sx, sy, sz); // we are using lod 2 data for processing
-
             Console.WriteLine("[{0}] File preprocessed. X: {1}, Y: {2}, Z: {3}", sw.Elapsed, sx, sy, sz);
 
             float emptyCellCheckDistance = step * 1.73205080757f / maximumDistance;
             float emptyCellDistance = step * 0.5f / maximumDistance;
             //step * 0.5f / maximumDistance;// * 0.5f;// (float)Math.Sqrt(2) * 0.5f;// cellSize * step * 0.05f;// * (float)Math.Sqrt(2) * 0.5f;
+
+            Dictionary<int, List<ValueTuple<int, float>>> tempBoneDictionary = new Dictionary<int, List<ValueTuple<int, float>>>();
+
+            for (int b = 0; b < bones.Count; b++)
+            {
+                Tuple<Vector, Vector, Bone> btuple = bones[b];
+
+                for (int j = 0; j < btuple.Item3.VertexWeightCount; j++)
+                {
+                    int vid = btuple.Item3.VertexWeights[j].VertexID; // vertex id
+                    int bid = b + 1; // bone id
+                    float weight = btuple.Item3.VertexWeights[j].Weight; // weight
+
+                    List<ValueTuple<int, float>> list;
+
+                    if (!tempBoneDictionary.TryGetValue(vid, out list))
+                    {
+                        list = new List<ValueTuple<int, float>>();
+                        tempBoneDictionary.Add(vid, list);
+                    }
+
+                    list.Add(new ValueTuple<int, float>(bid, weight));
+                }
+            }
+
+            Dictionary<int, ValueTuple<int, float>[]> boneDictionary = new Dictionary<int, ValueTuple<int, float>[]>();
+
+            foreach (var pair in tempBoneDictionary)
+                boneDictionary[pair.Key] = pair.Value.ToArray();
+
+            Array3D<float> data = new Array3D<float>(6, sx, sy, sz); // we are using lod 2 data for processing
 
             Iterate(0, sz * sy * sx, (i) =>
             {
@@ -138,18 +167,18 @@ namespace SDFTool
                 if (ix == 0 && iy == 0)
                     Console.WriteLine("[{0}] Processing {1}", sw.Elapsed, new Vector(ix, iy, iz));
 
-#if DEBUG
+#if DEBUG_IMAGES
                 byte[] testData = new byte[sx * sy * 4];
 #endif
                 Vector point = lowerBound + new Vector(ix, iy, iz) * step;
 
                 float distance;
                 Vector triangleWeights;
-                object triangleData;
+                PreparedTriangle triangle;
 
                 float distancePercentage;
 
-                bool empty = !triangleMap.FindTriangles(point, out distance, out triangleWeights, out triangleData);
+                bool empty = !triangleMap.FindTriangles(point, out distance, out triangleWeights, out triangle);
 
                 distancePercentage = Math.Sign(distance) * Math.Min(Math.Abs(distance / maximumDistance), 1.0f);
 
@@ -158,7 +187,7 @@ namespace SDFTool
                 {
                     data[ix, iy, iz, 0] = distancePercentage;
 
-#if DEBUG
+#if DEBUG_IMAGES
                         // temporary test images. I had to scale the distance 4x to make them visible. Not sure it would work
                         // for all the meshes
                         testData[(ix + iy * sx) * 4] = distancePercentage > 0 ? (byte)(1024.0f * distancePercentage) : (byte)0;
@@ -166,10 +195,10 @@ namespace SDFTool
                         //testData[(ix + iy * sx) * 4 + 2] = (byte)(triangleData == null ? 128 : 0);
 #endif
 
-                    if (triangleData != null)
+                    if (triangle != null)
                     {
                         // Saved triangle data
-                        Tuple<Mesh, Face> tuple = (Tuple<Mesh, Face>)triangleData;
+                        Tuple<Mesh, Face> tuple = (Tuple<Mesh, Face>)triangle.Data;
                         Mesh mesh = tuple.Item1;
                         Face face = tuple.Item2;
 
@@ -190,6 +219,44 @@ namespace SDFTool
                             data[ix, iy, iz, 2] = tc.Y;
                         }
 
+                        //Vector.Dot(triangle.Normal, point -
+                        Vector normal = triangle.Normal;
+
+                        Dictionary<int, float> topBones = new Dictionary<int, float>(8);
+
+                        //float[] mainBones = new float[bones.Count];
+
+                        float maxWeight = 0;
+                        int maxBoneId = 0;
+
+                        for (int k = 0; k < face.IndexCount; k++)
+                        {
+                            ValueTuple<int, float>[] list;
+                            if (boneDictionary.TryGetValue(face.Indices[k], out list))
+                            {
+                                foreach (var pair in list)
+                                {
+                                    float weight;
+                                    topBones.TryGetValue(pair.Item1, out weight);
+                                    weight += pair.Item2;
+
+                                    topBones[pair.Item1] = weight;
+
+                                    if (weight > maxWeight)
+                                    {
+                                        maxWeight = weight;
+                                        maxBoneId = pair.Item1;
+                                    }
+                                }
+                            }
+                        }
+
+                        data[ix, iy, iz, 3] = normal.X;
+                        data[ix, iy, iz, 4] = normal.Y; // no need for Z, it can be easily calculated
+                        data[ix, iy, iz, 5] = maxBoneId;
+
+                        //data[ix,iy,iz,3]
+
                         // TODO: 3,4,5,6 are RGBA colors
                         // TODO: indices 7+ should be weights for the bones and bone numbers
 
@@ -200,7 +267,7 @@ namespace SDFTool
                     }
                 }
 
-#if DEBUG
+#if DEBUG_IMAGES
                 if (ix == sx - 1 && iy == sy - 1)
                     Helper.SaveBitmap(testData, sx, sy, Path.GetFileNameWithoutExtension(outFile) + "_" + iz);
 #endif
@@ -287,6 +354,7 @@ namespace SDFTool
             Array3D<ushort> lod2uv = new Array3D<ushort>(2, packx * paddedLod2cellSize, packy * paddedLod2cellSize, packz * paddedLod2cellSize);
 
             Array3D<byte> lod2texture = new Array3D<byte>(4, packx * paddedLod2cellSize, packy * paddedLod2cellSize, packz * paddedLod2cellSize);
+            Array3D<byte> lod2normal = new Array3D<byte>(3, packx * paddedLod2cellSize, packy * paddedLod2cellSize, packz * paddedLod2cellSize);
 
             Console.WriteLine("[{0}] Got {1} empty cells, cell grid size {2}, {3:P}, total {4} of {5}x{5}x{5} cells, size {6} vs {7}, grid {8}x{9}x{10}",
                 sw.Elapsed, totalCells - usedCells, new Vector3i(cellsx, cellsy, cellsz), usedCells / (float)totalCells,
@@ -348,6 +416,7 @@ namespace SDFTool
                             Array3D<float> lod2uvBlock = new Array3D<float>(2, paddedLod2cellSize, paddedLod2cellSize, paddedLod2cellSize);
 
                             Array3D<byte> lod2textureBlock = new Array3D<byte>(4, paddedLod2cellSize, paddedLod2cellSize, paddedLod2cellSize);
+                            Array3D<byte> lod2normalBlock = new Array3D<byte>(3, paddedLod2cellSize, paddedLod2cellSize, paddedLod2cellSize);
 
                             for (int z = 0; z < cell.Item2.Depth; z++)
                                 for (int y = 0; y < cell.Item2.Height; y++)
@@ -357,8 +426,8 @@ namespace SDFTool
                                         float u = cell.Item2[x, y, z, 1];
                                         float v = cell.Item2[x, y, z, 2];
 
-                                        lod2distanceBlock[x, y, z, 0] = distance;
                                         lod2uvBlock[x, y, z, 0] = u;
+                                        lod2distanceBlock[x, y, z, 0] = distance;
                                         lod2uvBlock[x, y, z, 1] = v;
 
                                         if (z % 2 == 0 && y % 2 == 0 && x % 2 == 0) // half the resolution
@@ -377,6 +446,10 @@ namespace SDFTool
                                             lod2textureBlock[x, y, z, 2] = (byte)(textureColor);
                                             lod2textureBlock[x, y, z, 3] = (byte)(textureColor >> 24);
                                         }
+
+                                        lod2normalBlock[x, y, z, 0] = PackFloatToSByte(cell.Item2[x, y, z, 3]);
+                                        lod2normalBlock[x, y, z, 1] = PackFloatToSByte(cell.Item2[x, y, z, 4]);
+                                        lod2normalBlock[x, y, z, 2] = (byte)cell.Item2[x, y, z, 5];
                                     }
 #if LOD0_8BIT
                             byte distByte = PackFloatToSByte(cell.Item1);
@@ -396,6 +469,8 @@ namespace SDFTool
 
                             if (texture != null)
                                 lod2texture.PutBlock(lod2textureBlock, atlasX * paddedLod2cellSize, atlasY * paddedLod2cellSize, atlasZ * paddedLod2cellSize);
+
+                            lod2normal.PutBlock(lod2normalBlock, atlasX * paddedLod2cellSize, atlasY * paddedLod2cellSize, atlasZ * paddedLod2cellSize);
 
                             lod0uv[ix, iy, iz, 0] = PackFloatToUShort(cell.Item2[paddedLod2cellSize / 2, paddedLod2cellSize / 2, paddedLod2cellSize / 2, 1]);
                             lod0uv[ix, iy, iz, 1] = PackFloatToUShort(cell.Item2[paddedLod2cellSize / 2, paddedLod2cellSize / 2, paddedLod2cellSize / 2, 2]);
@@ -438,6 +513,8 @@ namespace SDFTool
 
             if (texture != null)
                 Helper.SaveKTX(Helper.KTX_RGBA8, lod2texture.Width, lod2texture.Height, lod2texture.Depth, lod2texture.Data, Path.GetFileNameWithoutExtension(outFile) + "_lod_2_texture.3d.ktx");
+
+            Helper.SaveKTX(Helper.KTX_RGB8, lod2normal.Width, lod2normal.Height, lod2normal.Depth, lod2normal.Data, Path.GetFileNameWithoutExtension(outFile) + "_lod_2_normal.3d.ktx");
 
             Console.WriteLine("[{0}] KTX saved, saving boundary mesh", sw.Elapsed);
 

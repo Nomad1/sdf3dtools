@@ -21,6 +21,7 @@ namespace SDFTool
         public const int KTX_R16F = 0x822D;
         public const int KTX_R8 = 0x1903;
         public const int KTX_RGBA8 = 0x8058;
+        public const int KTX_RGB8 = 0x1907;
 
         /// <summary>
         /// Saves a 3d texture to KTX format with each pixel being a set of 4 ushort values
