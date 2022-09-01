@@ -116,23 +116,15 @@ namespace SDFTool
 
         public void PutBlock(Array3D<T> block, int tox, int toy, int toz)
         {
-            for (int nz = 0; nz < block.Depth; nz++)
-            {
-                int bz = toz + nz;
-                for (int ny = 0; ny < block.Height; ny++)
-                {
-                    int by = toy + ny;
-                    for (int nx = 0; nx < block.Width; nx++)
-                    {
-                        int bx = tox + nx;
-
-                        for (int nc = 0; nc < m_components; nc++)
-                            this[bx, by, bz, nc] = block[nx, ny, nz, nc];
-                    }
-                }
-            }
+            PutBlock(block, tox, toy, toz, (k, i) => k);
         }
-        public void PutBlock<K>(Array3D<K> block, int tox, int toy, int toz, Func<K,T> processor) where K : struct
+
+        public void PutBlock<K>(Array3D<K> block, int tox, int toy, int toz, Func<K, T> processor) where K : struct
+        {
+            PutBlock(block, tox, toy, toz, (k, i) => processor(k));
+        }
+
+        public void PutBlock<K>(Array3D<K> block, int tox, int toy, int toz, Func<K, int, T> processor) where K : struct
         {
             for (int nz = 0; nz < block.Depth; nz++)
             {
@@ -145,7 +137,7 @@ namespace SDFTool
                         int bx = tox + nx;
 
                         for (int nc = 0; nc < m_components; nc++)
-                            this[bx, by, bz, nc] = processor(block[nx, ny, nz, nc]);
+                            this[bx, by, bz, nc] = processor(block[nx, ny, nz, nc], nc);
                     }
                 }
             }

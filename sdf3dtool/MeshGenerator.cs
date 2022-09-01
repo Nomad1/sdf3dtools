@@ -86,60 +86,68 @@ namespace SDFTool
         }
 
         public static Surface CreateBoxMesh(Vector3 center, float width, float height, float depth,
-            bool cube = false, string surfaceName = "box",
-            Matrix4x4 uvwTransform = default(Matrix4x4))
+            Matrix4x4 uvwTransform = default(Matrix4x4),
+            string surfaceName = "box",
+            bool cube = false,
+            bool tcAsNormal = false)
         {
             Vector3 lb = center - new Vector3(width, height, depth) / 2;
             Vector3 ub = center + new Vector3(width, height, depth) / 2;
 
-            return CreateBoxMesh(lb, ub, cube, surfaceName, uvwTransform);
+            return CreateBoxesMesh(
+                new Tuple<Vector3, Vector3, Matrix4x4>[] { new Tuple<Vector3, Vector3, Matrix4x4>(lb, ub, uvwTransform) },
+                surfaceName, cube, tcAsNormal);
         }
 
-        public static Surface CreateBoxMesh(Vector3 lb, Vector3 ub,
-            bool cube = false, string surfaceName = "box",
-            Matrix4x4 uvwTransform = default(Matrix4x4))
+        public static Surface CreateBoxMesh(Vector3 lb, Vector3 ub, Matrix4x4 uvwTransform = default(Matrix4x4),
+                string surfaceName = "box",
+                bool cube = false,
+                bool tcAsNormal = false)
         {
-            if (uvwTransform.M11 == 0)
-                uvwTransform = Matrix4x4.Identity;
+            return CreateBoxesMesh(
+                new Tuple<Vector3, Vector3, Matrix4x4>[] { new Tuple<Vector3, Vector3, Matrix4x4>(lb, ub, uvwTransform) },
+                surfaceName, cube, tcAsNormal);
+        }
 
-                // Here goes ideal box creation - 8 vertices, 6 normals, few texcoords (TODO: change to 3d texcoords)
+        public static Surface CreateBoxesMesh(Tuple<Vector3, Vector3, Matrix4x4> [] boxes,
+                string surfaceName = "box",
+                bool cube = false,
+                bool tcAsNormal = false)
+        {
+            List<Vector3> vertices = new List<Vector3>();
+            List<Vector3> normals = new List<Vector3>();
+            List<Vector4> texCoords = new List<Vector4>();
+            List<int[]> faces = new List<int[]>();
 
-                // 8 vertices
-            Vector3[] vertices = {
-                lb,
-                new Vector3(ub.X, lb.Y, lb.Z),
-                new Vector3(lb.X, ub.Y, lb.Z),
-                new Vector3(ub.X, ub.Y, lb.Z),
-                new Vector3(lb.X, lb.Y, ub.Z),
-                new Vector3(ub.X, lb.Y, ub.Z),
-                new Vector3(lb.X, ub.Y, ub.Z),
-                ub
-            };
+            foreach (var tuple in boxes)
+                CreateBox(tuple.Item1, tuple.Item2, tuple.Item3, cube, tcAsNormal, vertices, normals, texCoords, faces);
 
-            // 6 normals
-            Vector3[] normals = {
-                new Vector3(0.0f, 0.0f, -1.0f),
+            return new Surface(vertices.ToArray(), normals.ToArray(), texCoords.ToArray(), faces.ToArray(), surfaceName);
+            //return new Surface(vertices, normals, texCoords, faces, surfaceName);
+        }
+
+        private static readonly Vector3[] s_boxNormals = {
                 new Vector3(0.0f, 0.0f, 1.0f),
-                new Vector3(0.0f, -1.0f, 0.0f),
-                new Vector3(1.0f, 0.0f, 0.0f),
                 new Vector3(0.0f, 1.0f, 0.0f),
                 new Vector3(-1.0f, 0.0f, 0.0f),
+                new Vector3(1.0f, 0.0f, 0.0f),
+                new Vector3(0.0f, -1.0f, 0.0f),
+                new Vector3(0.0f, 0.0f, -1.0f),
             };
 
-            // 8 or 12 tex coords
-            Vector3[] texcoords =
-            cube ?
-            new[]{
+        private static readonly Vector3[] s_cubeTexCoords = {
                 new Vector3(0.0f, 0.0f, 0.0f),
                 new Vector3(1.0f, 0.0f, 0.0f),
-                new Vector3(0.0f, 1.0f, 0.0f),
                 new Vector3(1.0f, 1.0f, 0.0f),
-                new Vector3(0.0f, 0.0f, 1.0f),
-                new Vector3(1.0f, 0.0f, 1.0f),
+                new Vector3(0.0f, 1.0f, 0.0f),
+
                 new Vector3(0.0f, 1.0f, 1.0f),
                 new Vector3(1.0f, 1.0f, 1.0f),
-            } :
-            new []{
+                new Vector3(1.0f, 0.0f, 1.0f),
+                new Vector3(0.0f, 0.0f, 1.0f),
+            };
+
+        private static readonly Vector3[] s_boxTexCoords = {
                 new Vector3(0.0f, 0.0f, 0.0f),
                 new Vector3(1.0f, 0.0f, 0.0f),
 
@@ -157,31 +165,30 @@ namespace SDFTool
 
                 new Vector3(0.0f, 1.0f, 0.0f),
                 new Vector3(1.0f, 1.0f, 0.0f)
-            };
+        };
 
-            // 12 triangles, 2 for the each box side
-            Triangle[] faces =
-                cube ?
-            new[]{
-                new Triangle(1, 1, 1, 3, 3, 1, 4, 4, 1),
-                new Triangle(4, 4, 1, 2, 2, 1, 1, 1, 1),
+        private static readonly Triangle[] s_cubeFaces = {
+                // front
+                new Triangle(1, 1, 1, 3, 3, 1, 2, 2, 1),
+                new Triangle(1, 1, 1, 4, 4, 1, 3, 3, 1),
+                // top
+                new Triangle(3, 3, 2, 4, 4, 2, 5, 5, 2),
+                new Triangle(3, 3, 2, 5, 5, 2, 6, 6, 2),
+                // right
+                new Triangle(2, 2, 3, 3, 3, 3, 6, 6, 3),
+                new Triangle(2, 2, 3, 6, 6, 3, 7, 7, 3),
+                // left
+                new Triangle(1, 1, 4, 8, 8, 4, 5, 5, 4),
+                new Triangle(1, 1, 4, 5, 5, 4, 4, 4, 4),
+                // back
+                new Triangle(6, 6, 5, 5, 5, 5, 8, 8, 5),
+                new Triangle(6, 6, 5, 8, 8, 5, 7, 7, 5),
+                // bottom
+                new Triangle(1, 1, 6, 7, 7, 6, 8, 8, 6),
+                new Triangle(1, 1, 6, 2, 2, 6, 7, 7, 6)
+        };
 
-                new Triangle(5, 5, 2, 6, 6, 2, 8, 8, 2),
-                new Triangle(8, 8, 2, 7, 7, 2, 5, 5, 2),
-
-                new Triangle(1, 1, 3, 2, 2, 3, 6, 6, 3),
-                new Triangle(6, 6, 3, 5, 5, 3, 1, 1, 3),
-
-                new Triangle(2, 2, 4, 4, 4, 4, 8, 8, 4),
-                new Triangle(8, 8, 4, 6, 6, 4, 2, 2, 4),
-
-                new Triangle(4, 4, 5, 3, 3, 5, 7, 7, 5),
-                new Triangle(7, 7, 5, 8, 8, 5, 4, 4, 5),
-
-                new Triangle(3, 3, 6, 1, 1, 6, 5, 5, 6),
-                new Triangle(5, 5, 6, 7, 7, 6, 3, 3, 6)
-            } :
-            new[]{
+        private static readonly Triangle[] s_boxFaces = {
                 new Triangle(1, 10, 1, 3, 12, 1, 4, 11, 1),
                 new Triangle(4, 11, 1, 2, 9, 1, 1, 10, 1),
 
@@ -199,7 +206,38 @@ namespace SDFTool
 
                 new Triangle(3, 1, 6, 1, 2, 6, 5, 4, 6),
                 new Triangle(5, 4, 6, 7, 3, 6, 3, 1, 6)
+        };
+
+        private static void CreateBox(Vector3 lb, Vector3 ub,
+            Matrix4x4 uvwTransform, bool cube, bool tcAsNormal,
+            List<Vector3> vertices, List<Vector3> normals, List<Vector4> texCoords, List<int[]> faces)
+        {
+            if (uvwTransform.M11 == 0)
+                uvwTransform = Matrix4x4.Identity;
+
+            // Here goes ideal box creation - 8 vertices, 6 normals, few texcoords
+
+            // 8 vertices
+            Vector3[] tempVertices = {
+                lb,
+                new Vector3(ub.X, lb.Y, lb.Z),
+                new Vector3(ub.X, ub.Y, lb.Z),
+                new Vector3(lb.X, ub.Y, lb.Z),
+
+                new Vector3(lb.X, ub.Y, ub.Z),
+                ub,
+                new Vector3(ub.X, lb.Y, ub.Z),
+                new Vector3(lb.X, lb.Y, ub.Z),
             };
+
+            // 6 normals
+            Vector3[] tempNormals = s_boxNormals;
+
+            // 8 or 12 tex coords
+            Vector3[] tempTexCoords = cube ? s_cubeTexCoords : s_boxTexCoords;
+
+            // 12 triangles, 2 for the each box side
+            Triangle[] tempFaces = cube ? s_cubeFaces : s_boxFaces;
 
             // Here goes deduplication: every vertex should have unique normal and texcoord resulting in 24 unique vertices, normals and tex coords
 
@@ -211,30 +249,38 @@ namespace SDFTool
             // temporary collection
             List<ValueTuple<int, int, int>> vertexPairs = new List<ValueTuple<int, int, int>>();
 
-            for (int i = 0; i < faces.Length; i++)
+            for (int i = 0; i < tempFaces.Length; i++)
             {
                 int[] face = new int[3];
 
-                for (int j = 0; j < faces[i].Points.Length; j++)
+                for (int j = 0; j < tempFaces[i].Points.Length; j++)
                 {
-                    int index = vertexPairs.IndexOf(faces[i].Points[j]);
+                    int index = vertexPairs.IndexOf(tempFaces[i].Points[j]);
                     if (index == -1)
                     {
                         index = vertexPairs.Count;
-                        vertexPairs.Add(faces[i].Points[j]);
+                        vertexPairs.Add(tempFaces[i].Points[j]);
 
-                        newVertices.Add(vertices[faces[i].Points[j].Item1]);
-                        newTexCoords.Add(new Vector4(Vector3.Transform(texcoords[faces[i].Points[j].Item2], uvwTransform), 0.0f));
-                        newNormals.Add(normals[faces[i].Points[j].Item3]);
+                        newVertices.Add(tempVertices[tempFaces[i].Points[j].Item1]);
+
+                        Vector3 tc = Vector3.Transform(tempTexCoords[tempFaces[i].Points[j].Item2], uvwTransform);
+                        newTexCoords.Add(new Vector4(tc, 0.0f));
+
+                        if (tcAsNormal)
+                            newNormals.Add(tc);
+                        else
+                            newNormals.Add(tempNormals[tempFaces[i].Points[j].Item3]);
                     }
-                    face[j] = index;
+                    face[j] = index + vertices.Count;
                 }
                 newFaces.Add(face);
             }
 
-            return new Surface(newVertices.ToArray(), newNormals.ToArray(), newTexCoords.ToArray(), newFaces.ToArray(), surfaceName);
+            vertices.AddRange(newVertices);
+            normals.AddRange(newNormals);
+            faces.AddRange(newFaces);
+            texCoords.AddRange(newTexCoords);
         }
-
     }
 }
 

@@ -16,6 +16,7 @@ namespace SDFTool
     {
         public const int KTX_RGBA16F = 0x881A;
         public const int KTX_RGBA16 = 0x805B;
+        public const int KTX_RG = 0x8227;
         public const int KTX_RG16 = 0x822C;
         public const int KTX_RG16F = 0x822F;
         public const int KTX_R16F = 0x822D;
@@ -32,7 +33,7 @@ namespace SDFTool
         /// <param name="depth"></param>
         /// <param name="data"></param>
         /// <param name="outfile"></param>
-        public static void SaveKTX(int format, int width, int height, int depth, ushort[] data, string outfile)
+        public static void SaveKTX(int format, int width, int height, int depth, ushort[][] data, string outfile)
         {
             string file = outfile.EndsWith(".ktx") ? outfile : (Path.GetFileNameWithoutExtension(outfile) + ".ktx");
 
@@ -45,22 +46,26 @@ namespace SDFTool
                 writer.Write(2); // raw size
                 writer.Write(format); // raw format
                 writer.Write(format); // format
-                writer.Write(0x1908); // rgba?
+                writer.Write(format/* == KTX_RG16 || format == KTX_RG16F ? KTX_RG : format*/); // rgba?
                 writer.Write(width);
                 writer.Write(height);
                 writer.Write(depth);
                 writer.Write(0); // elements
                 writer.Write(1); // faces
-                writer.Write(1); // mipmaps
+                writer.Write(data.Length); // mipmaps
                 writer.Write(0); // metadata
 
                 while (writer.BaseStream.Length < 64 + 0) // header + metadata size
                     writer.Write(0);
 
-                writer.Write(data.Length * 2); // current mipmap size
 
                 for (int i = 0; i < data.Length; i++)
-                    writer.Write(data[i]);
+                {
+                    writer.Write(data[i].Length * 2); // current mipmap size
+
+                    for (int j = 0; j < data[i].Length; j++)
+                        writer.Write(data[i][j]);
+                }
             }
         }
 
@@ -73,7 +78,7 @@ namespace SDFTool
         /// <param name="depth"></param>
         /// <param name="data"></param>
         /// <param name="outfile"></param>
-        public static void SaveKTX(int format, int width, int height, int depth, byte[] data, string outfile)
+        public static void SaveKTX(int format, int width, int height, int depth, byte[][] data, string outfile)
         {
             string file = Path.GetFileNameWithoutExtension(outfile) + ".ktx";
 
@@ -86,22 +91,40 @@ namespace SDFTool
                 writer.Write(1); // raw size
                 writer.Write(format); // raw format
                 writer.Write(format); // format
-                writer.Write(0x1908); // rgba?
+                writer.Write(format == KTX_RG16 || format == KTX_RG16F ? KTX_RG : format == KTX_R8 || format == KTX_R16F ? KTX_R8 : format); // rgba?
                 writer.Write(width);
                 writer.Write(height);
                 writer.Write(depth);
                 writer.Write(0); // elements
                 writer.Write(1); // faces
-                writer.Write(1); // mipmaps
+                writer.Write(data.Length); // mipmaps
                 writer.Write(0); // metadata
 
                 while (writer.BaseStream.Length < 64 + 0) // header + metadata size
                     writer.Write(0);
 
-                writer.Write(data.Length); // current mipmap size
+                int minBlocks = 1;
+                int blockSizeX = 1, blockSizeY = 1, blockSizeZ = 1, blockSize = 8;
 
                 for (int i = 0; i < data.Length; i++)
-                    writer.Write(data[i]);
+                {
+                    int length = (Math.Max((width + blockSizeX - 1) / blockSizeX, minBlocks)
+                                        * Math.Max((height + blockSizeY - 1) / blockSizeY, minBlocks)
+                                        * Math.Max((depth + blockSizeZ - 1) / blockSizeZ, minBlocks)
+                                        * blockSize / 8);
+
+                    writer.Write(length); // current mipmap size
+
+                    for (int j = 0; j < data[i].Length; j++)
+                        writer.Write(data[i][j]);
+
+                    for (int j = data[i].Length; j < length; j++)
+                        writer.Write((byte)0);
+
+                    width >>= 1;
+                    height >>= 1;
+                    depth >>= 1;
+                }
             }
         }
 
@@ -209,7 +232,7 @@ namespace SDFTool
 
             float radius = (float)Math.Sqrt((maxx - minx) * (maxx - minx) + (maxy - miny) * (maxy - miny) + (maxz - minz) * (maxz - minz)) / 2;
 
-            string file = Path.GetFileNameWithoutExtension(outFile) + ".mesh";
+            string file = Path.GetFileNameWithoutExtension(outFile) + ".unigine.mesh";
 
             using (Stream stream = File.Open(file, FileMode.Create, FileAccess.Write, FileShare.None))
             using (BinaryWriter writer = new BinaryWriter(stream))
