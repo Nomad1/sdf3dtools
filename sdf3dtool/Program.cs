@@ -562,8 +562,8 @@ namespace SDFTool
 
             //MeshGenerator.Surface surface = MeshGenerator.CreateBoxMesh(lowerBound, upperBound, true, "main_box", default(System.Numerics.Matrix4x4), false);//, Matrix.CreateScale(uvwScale));
 
-            Helper.SaveUnigineMesh(new MeshGenerator.Surface[] { MeshGenerator.CreateBoxMesh(lowerBound, upperBound, System.Numerics.Matrix4x4.Identity, "main_box", true, false) }, outFile);
-            //Helper.SaveUnigineMesh(new MeshGenerator.Surface[] { MeshGenerator.CreateBoxesMesh(boxes.ToArray(), "main_box", true, false) }, outFile);
+            //Helper.SaveUnigineMesh(new MeshGenerator.Surface[] { MeshGenerator.CreateBoxMesh(lowerBound, upperBound, System.Numerics.Matrix4x4.Identity, "main_box", true, false) }, outFile);
+            Helper.SaveUnigineMesh(new MeshGenerator.Surface[] { MeshGenerator.CreateBoxesMesh(boxes.ToArray(), "main_box", true, false) }, outFile);
             //Helper.SaveObjMesh(new MeshGenerator.Surface[] { surface }, outFile);
 
             //List<MeshGenerator.Surface> surfaces = new List<MeshGenerator.Surface>();
@@ -588,8 +588,9 @@ namespace SDFTool
         {
             Array3D<float> result = new Array3D<float>(topLodDistance.Components, lodSize, lodSize, lodSize);
 
+            /*
             // TODO: we must keep the boundaries, so right now this is test version not respecting them
-            float step = (topLodDistance.Depth/* - 1.0f*/) / lodSize;
+            float step = (topLodDistance.Depth) / lodSize;
 
             for (int nz = 0; nz < result.Depth; nz++)
             {
@@ -605,6 +606,57 @@ namespace SDFTool
 
                         for (int c = 0; c < result.Components; c++)
                             result[nx, ny, nz, c] = topLodDistance[ix, iy, iz, c];
+                    }
+                }
+            }*/
+
+            float step = (topLodDistance.Depth - 1.0f) / (lodSize - 1.0f);
+
+            for (int nz = 0; nz < lodSize; nz++)
+            {
+                for (int ny = 0; ny < lodSize; ny++)
+                {
+                    for (int nx = 0; nx < lodSize; nx++)
+                    {
+                        Vector pos = new Vector(nx * step, ny * step, nz * step);
+                        Vector3i ipos = new Vector3i((int)pos.X, (int)pos.Y, (int)pos.Z);
+                        Vector fr = new Vector(pos.X - ipos.X, pos.Y - ipos.Y, pos.Z - ipos.Z);
+
+                        float [] coef =
+                        {
+                            (1.0f - fr.X) * (1.0f - fr.Y) * (1.0f - fr.Z),
+                            (fr.X) * (1.0f - fr.Y) * (1.0f - fr.Z),
+                            (1.0f - fr.X) * (fr.Y) * (1.0f - fr.Z),
+                            (fr.X) * (fr.Y) * (1.0f - fr.Z),
+                            (1.0f - fr.X) * (1.0f - fr.Y) * (fr.Z),
+                            (fr.X) * (1.0f - fr.Y) * (fr.Z),
+                            (1.0f - fr.X) * (fr.Y) * (fr.Z),
+                            (fr.X) * (fr.Y) * (fr.Z)
+                        };
+
+                        Vector3i[] shifts =
+                        {
+                            new Vector3i(0, 0, 0),
+                            new Vector3i(1, 0, 0),
+                            new Vector3i(0, 1, 0),
+                            new Vector3i(1, 1, 0),
+                            new Vector3i(0, 0, 1),
+                            new Vector3i(1, 0, 1),
+                            new Vector3i(0, 1, 1),
+                            new Vector3i(1, 1, 1)
+                        };
+
+                        for (int c = 0; c < result.Components; c++)
+                        {
+                            for (int i = 0; i < coef.Length; i++)
+                            {
+                                Vector3i ip = new Vector3i(ipos.X + shifts[i].X, ipos.Y + shifts[i].Y, ipos.Z + shifts[i].Z);
+                                if (ip.X >= topLodDistance.Width || ip.Y >= topLodDistance.Height || ip.Z >= topLodDistance.Depth)
+                                    continue;
+
+                                result[nx, ny, nz, c] += coef[i] * topLodDistance[ip.X, ip.Y, ip.Z, c];
+                            }
+                        }
                     }
                 }
             }

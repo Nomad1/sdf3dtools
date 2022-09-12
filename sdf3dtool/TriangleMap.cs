@@ -1,4 +1,4 @@
-﻿#define DONT_USE_EARLY_EXIT
+﻿//#define DONT_USE_EARLY_EXIT
 //#define EXTRA_VECTORS
 //#define GENERATE_UDF
 
