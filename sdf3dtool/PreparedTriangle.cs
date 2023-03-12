@@ -56,6 +56,7 @@ namespace SDFTool
         }
     }
 
+#if USE_PSEUDO_NORMALS
     public class PseudoNormal
     {
         private Vector3 m_value;
@@ -89,35 +90,34 @@ namespace SDFTool
 
         Max = 7
     } 
+#endif
 
     internal class PreparedTriangle
     {
         // Vertices
-        public readonly Vector3 A, B, C;
-
-        // Center point and radius
-        public readonly Vector3 Center;
-        public readonly float Radius;
-
+        private readonly Vector3 A, B, C;
         // Normal
         public readonly Vector3 Normal;
-        // Distance from A to (0,0,0)
-        private readonly float ZeroDistance;
+
+        // AABB
+        public readonly Vector3 LowerBound;
+        public readonly Vector3 UpperBound;
+
+        // Radius - maximal distance form center to vertices
+        private readonly float Radius;
 
         // Triangle area
-        private readonly float NormalLength;
         public readonly float Area;
+        private readonly float NormalLength;
 
         public readonly object Data;
 #if USE_PSEUDO_NORMALS
         public readonly PseudoNormal[] PseudoNormals;
 #endif
 
-        public readonly Vector3 LowerBound;
-        public readonly Vector3 UpperBound;
-
         public PreparedTriangle(Vector3 a, Vector3 b, Vector3 c,
-            object parent
+            object parent,
+            Vector3 na, Vector3 nb, Vector3 nc
 #if USE_PSEUDO_NORMALS
             , PseudoNormal[] normals
 #endif
@@ -126,6 +126,7 @@ namespace SDFTool
             A = a;
             B = b;
             C = c;
+           
             Data = parent;
 
             Normal = Vector3.Cross(b - a, c - a);
@@ -144,10 +145,9 @@ namespace SDFTool
             PseudoNormals[(int)TriangleRegion.VertexB].Add((float)Math.Acos(Vector3.Dot(a - b, c - b) / ((a - b).Length() * (c - b).Length())) * Normal);
             PseudoNormals[(int)TriangleRegion.VertexC].Add((float)Math.Acos(Vector3.Dot(a - c, b - c) / ((a - c).Length() * (b - c).Length())) * Normal);
 #endif
-            ZeroDistance = Vector3.Dot(Normal, A);
 
-            Center = (a + b + c) / 3;
-            Radius = (float)Math.Sqrt(Math.Max(Math.Max(Vector3.DistanceSquared(Center, A), Vector3.DistanceSquared(Center, B)), Vector3.DistanceSquared(Center, C)));
+            Vector3 center = (a + b + c) / 3;
+            Radius = (float)Math.Sqrt(Math.Max(Math.Max(Vector3.DistanceSquared(center, A), Vector3.DistanceSquared(center, B)), Vector3.DistanceSquared(center, C)));
 
             LowerBound.X = Math.Min(Math.Min(a.X, b.X), c.X);
             LowerBound.Y = Math.Min(Math.Min(a.Y, b.Y), c.Y);
@@ -250,9 +250,9 @@ namespace SDFTool
             Vector3 cb = C - B;
             Vector3 ac = A - C;
 
-            float u = Vector3.Dot(Vector3.Cross(cb, pb), Normal) / NormalLength;
-            float v = Vector3.Dot(Vector3.Cross(ac, pc), Normal) / NormalLength;
-            float w = Vector3.Dot(Vector3.Cross(ba, pa), Normal) / NormalLength;
+            float u = Vector3.Dot(Normal, Vector3.Cross(cb, pb)) / NormalLength;
+            float v = Vector3.Dot(Normal, Vector3.Cross(ac, pc)) / NormalLength;
+            float w = Vector3.Dot(Normal, Vector3.Cross(ba, pa)) / NormalLength;
 
             weights = new Vector3(u, v, w);
 
@@ -293,8 +293,7 @@ namespace SDFTool
                 else // never happens
                 {
                     pp = Vector3.Zero;
-                    if (weights.X < 0 || weights.Y < 0 || weights.Z < 0 || weights.X > 1 || weights.Y > 1 || weights.Z > 1)
-                        Console.WriteLine("Weights are invalid!");
+                    Console.WriteLine("Weights are invalid!");
 
                     return float.MaxValue;
                 }
@@ -351,12 +350,15 @@ namespace SDFTool
 
         public bool IntersectsSphere(Vector3 point, float radius)
         {
-            float distance = (point - Center).Length();
+            float distance = (point - (A + B + C) * 0.33333333333f).Length();
             return distance < radius + Radius;
         }
 
         public bool PlaneIntersectsAABB(Vector3 lb, Vector3 ub)
         {
+            if (!IntersectsAABB(lb, ub))
+                return false;
+
             Vector3 center = (ub + lb) * 0.5f; // Compute AABB center
             Vector3 e = ub - center; // Compute positive extents
 
@@ -364,7 +366,7 @@ namespace SDFTool
             float r = e.X * Math.Abs(Normal.X) + e.Y * Math.Abs(Normal.Y) + e.Z * Math.Abs(Normal.Z);
 
             // Compute distance of box center from plane
-            float s = Vector3.Dot(Normal, center) - ZeroDistance;
+            float s = Vector3.Dot(Normal, center) - Vector3.Dot(Normal, A);
 
             // Intersection occurs when distance s falls within [-r,+r] interval
             return Math.Abs(s) <= r;

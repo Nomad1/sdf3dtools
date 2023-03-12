@@ -1,4 +1,4 @@
-﻿//#define DONT_USE_EARLY_EXIT
+﻿#define DONT_USE_EARLY_EXIT
 //#define EXTRA_VECTORS
 //#define GENERATE_UDF
 
@@ -89,6 +89,7 @@ namespace SDFTool
                             Vector3 tileEnd = tileStart + new Vector3(m_gridStep, m_gridStep, m_gridStep);
 
                             if (!triangle.PlaneIntersectsAABB(tileStart, tileEnd))
+                            //if (!triangle.IntersectsAABB(tileStart, tileEnd) || )
                                 continue;
 
                             int index = x + y * m_gridx + z * m_gridx * m_gridy;
@@ -256,9 +257,12 @@ namespace SDFTool
             sign = Math.Sign(distance);
 #else
             sign = 0;
-            
+
+            //if (!earlyExit && distance != float.MaxValue)
+                //distance = Vector3.Distance(point, result);
+
             Vector3[] dirs = new Vector3[] {
-                Vector3.Normalize(point - result),
+                !earlyExit && distance != float.MaxValue ? Vector3.Normalize(point - result) : new Vector3(float.NaN, float.NaN, float.NaN),
 #if EXTRA_VECTORS
                 Vector3.Normalize(result - point),
                 Vector3.Normalize(point - new Vector3(0, 0, 0)),
@@ -278,7 +282,7 @@ namespace SDFTool
                 Vector3 direction = dir;
 
                 if (float.IsNaN(direction.X) || float.IsNaN(direction.Y) || float.IsNaN(direction.Z))
-                    direction = Vector3.Normalize(new Vector3(1, 1, 1));
+                    direction = Vector3.Normalize(point - new Vector3(0.5f, 0.5f, 0.5f));
 
                 sign += CountIntersections(point, direction) % 2 == 0 ? 1 : -1;
 
@@ -288,7 +292,14 @@ namespace SDFTool
 
             sign = sign >= 0 ? 1 : -1;
 #endif
+            //if (data != null)
+            //{
+                //Vector3 p = data.GetCurvativePoint(weights.X, weights.Y, weights.Z);
+                //distance = Vector3.Distance(point, p);
+            //}
+
             distance *= sign;
+
 
             //if (weights.X < 0 || weights.Y < 0 || weights.Z < 0 || weights.X > 1 || weights.Y > 1 || weights.Z > 1)
                 //Console.WriteLine("Weights are invalid!");
