@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Diagnostics;
 
 #if USE_SYSTEM_DRAWING
 using System.Drawing;
@@ -24,6 +25,74 @@ namespace SDFTool
         public const int KTX_RGBA8 = 0x8058;
         public const int KTX_RGB8 = 0x1907;
 
+        public static void SaveKTX(int format, Array3D<ushort>[] arrays, string outFile, string extension)
+        {
+            ushort[][] data = new ushort[arrays.Length][];
+            for (int i = 0; i < arrays.Length; i++)
+                data[i] = arrays[i].Data;
+
+            Helper.SaveKTX(format, arrays[0].Width, arrays[0].Height, arrays[0].Depth, data, Path.GetFileNameWithoutExtension(outFile) + extension);
+        }
+
+        public static void SaveKTX(int format, Array3D<byte>[] arrays, string outFile, string extension)
+        {
+            byte[][] data = new byte[arrays.Length][];
+            for (int i = 0; i < arrays.Length; i++)
+                data[i] = arrays[i].Data;
+
+            Helper.SaveKTX(format, arrays[0].Width, arrays[0].Height, arrays[0].Depth, data, Path.GetFileNameWithoutExtension(outFile) + extension);
+        }
+
+        public static void SaveKTX(int format, Array3D<ushort> array3d, string outFile, string extension)
+        {
+            Helper.SaveKTX(format, array3d.Width, array3d.Height, array3d.Depth, new ushort[][] { array3d.Data }, Path.GetFileNameWithoutExtension(outFile) + extension);
+        }
+
+        public static void SaveKTX(int format, Array3D<byte> array3d, string outFile, string extension)
+        {
+            Helper.SaveKTX(format, array3d.Width, array3d.Height, array3d.Depth, new byte[][] { array3d.Data }, Path.GetFileNameWithoutExtension(outFile) + extension);
+        }
+
+        public static void SaveKTX(int format, Array2D<ushort> array2d, string outFile, string extension)
+        {
+            Helper.SaveKTX(format, array2d.Width, array2d.Height, 0, new ushort[][] { array2d.Data }, Path.GetFileNameWithoutExtension(outFile) + extension);
+        }
+
+        public static void SaveKTX(int format, Array2D<byte> array2d, string outFile, string extension)
+        {
+            Helper.SaveKTX(format, array2d.Width, array2d.Height, 0, new byte[][] { array2d.Data }, Path.GetFileNameWithoutExtension(outFile) + extension);
+        }
+
+        public static Array2D<T> Array3Dto2D<T>(Array3D<T> array3d, int blockSize) where T : struct
+        {
+            Debug.Assert(array3d.Depth == blockSize);
+
+            Array2D<T> array2d = new Array2D<T>(array3d.Components, array3d.Width * blockSize, array3d.Height);
+
+            for (int nz = 0; nz < array3d.Depth; nz += blockSize)
+            {
+                for (int ny = 0; ny < array3d.Height; ny += blockSize)
+                {
+                    for (int nx = 0; nx < array3d.Width; nx += blockSize)
+                    {
+
+                        for (int z = 0; z < blockSize; z++)
+                        {
+                            for (int y = 0; y < blockSize; y++)
+                            {
+                                for (int x = 0; x < blockSize; x++)
+                                {
+                                    for (int c = 0; c < array3d.Components; c++)
+                                        array2d[(nx + z) * blockSize + x, ny + y, c] = array3d[nx + x, ny + y, nz + z, c];
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            return array2d;
+        }
         /// <summary>
         /// Saves a 3d texture to KTX format with each pixel being a set of 4 ushort values
         /// </summary>
@@ -277,6 +346,6 @@ namespace SDFTool
             throw new NotImplementedException();
         }
 #endif
-}
+    }
 }
 

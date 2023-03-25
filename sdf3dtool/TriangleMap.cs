@@ -5,6 +5,7 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Threading.Tasks;
 
 namespace SDFTool
 {
@@ -61,7 +62,7 @@ namespace SDFTool
             m_gridy = (int)Math.Ceiling((sceneMax.Y - sceneMin.Y) / m_gridStep) + 1;
             m_gridz = (int)Math.Ceiling((sceneMax.Z - sceneMin.Z) / m_gridStep) + 1;
 
-            List<PreparedTriangle> [] triangles = new List<PreparedTriangle>[m_gridx * m_gridy * m_gridz];
+            List<PreparedTriangle>[] triangles = new List<PreparedTriangle>[m_gridx * m_gridy * m_gridz];
 
             CellsUsed = 0;
             TriangleCount = triangleList.Count;
@@ -89,7 +90,6 @@ namespace SDFTool
                             Vector3 tileEnd = tileStart + new Vector3(m_gridStep, m_gridStep, m_gridStep);
 
                             if (!triangle.PlaneIntersectsAABB(tileStart, tileEnd))
-                            //if (!triangle.IntersectsAABB(tileStart, tileEnd) || )
                                 continue;
 
                             int index = x + y * m_gridx + z * m_gridx * m_gridy;
@@ -146,10 +146,11 @@ namespace SDFTool
             m_nibble = nibble.ToArray();
         }
 
-        public bool FindTriangles(Vector3 point, out float distance, out Vector3 weights, out PreparedTriangle data)
+        public bool FindTriangles(Vector3 point, out float distance, out Vector3 weights, out int triangleId)
         {
             distance = float.MaxValue;
-            data = null;
+            float minDistanceSqrd = float.MaxValue;
+            triangleId = -1;
             weights = Vector3.Zero;
             Vector3 result = Vector3.Zero;
             int sign;
@@ -225,23 +226,26 @@ namespace SDFTool
                         int tempSign;
                         float dist = triangle.DistanceToPoint(point, out tempWeights, out tempResult, out tempSign);
 #else
-                        float dist = triangle.DistanceToPoint(point, out tempWeights, out tempResult);
+                        tempResult = PreparedTriangle.ClosetPointToTriangle(triangle, point, out tempWeights);
+                        Vector3 dir = point - tempResult;
+                        float dist = Vector3.Dot(dir, dir);
 #endif
-                        if (dist < distance && dist != float.MaxValue)
+                        if (dist < minDistanceSqrd)
                         {
-                            distance = dist;
+                            minDistanceSqrd = dist;
+                            distance = (float)Math.Sqrt(dist);
 
                             lb = point - new Vector3(distance, distance, distance);
                             ub = point + new Vector3(distance, distance, distance);
 
                             weights = tempWeights;
                             //if (weights.X < 0 || weights.Y < 0 || weights.Z < 0 || weights.X > 1 || weights.Y > 1 || weights.Z > 1)
-                                //Console.WriteLine("Weights are invalid!");
+                            //Console.WriteLine("Weights are invalid!");
 #if PSEUDO_SIGN
                             sign = tempSign;
 #endif
                             result = tempResult;
-                            data = triangle;
+                            triangleId = triangle.Id;
                         }
                     }
 
@@ -259,7 +263,7 @@ namespace SDFTool
             sign = 0;
 
             //if (!earlyExit && distance != float.MaxValue)
-                //distance = Vector3.Distance(point, result);
+            //distance = Vector3.Distance(point, result);
 
             Vector3[] dirs = new Vector3[] {
                 !earlyExit && distance != float.MaxValue ? Vector3.Normalize(point - result) : new Vector3(float.NaN, float.NaN, float.NaN),
@@ -294,15 +298,15 @@ namespace SDFTool
 #endif
             //if (data != null)
             //{
-                //Vector3 p = data.GetCurvativePoint(weights.X, weights.Y, weights.Z);
-                //distance = Vector3.Distance(point, p);
+            //Vector3 p = data.GetCurvativePoint(weights.X, weights.Y, weights.Z);
+            //distance = Vector3.Distance(point, p);
             //}
 
             distance *= sign;
 
 
             //if (weights.X < 0 || weights.Y < 0 || weights.Z < 0 || weights.X > 1 || weights.Y > 1 || weights.Z > 1)
-                //Console.WriteLine("Weights are invalid!");
+            //Console.WriteLine("Weights are invalid!");
 
             return true;
         }
@@ -365,7 +369,7 @@ namespace SDFTool
             return count;*/
             HashSet<PreparedTriangle> triangles = new HashSet<PreparedTriangle>();
 
-            ProcessRay(localPoint, localEndPoint, delegate(int index)
+            ProcessRay(localPoint, localEndPoint, delegate (int index)
             {
                 if (m_triangles[index] == null)
                     return;
@@ -615,7 +619,7 @@ namespace SDFTool
 
                                 if (triangle.IntersectsRay(point, dir))
                                 {
-                                    if (Vector3.Dot(triangle.Normal, point) < 0)
+                                    if (Vector3.Dot(triangle.N, point) < 0)
                                         countBack++;
                                     else
                                         count++;
@@ -682,6 +686,46 @@ namespace SDFTool
             }
 
             return (tmin <= tzmax) && (tmax >= tzmin);
+        }
+
+        public void Dispatch(float[] data, Vector3 lowerBound, float pixelsToScene, int sx, int sy, int sz, Action<float> callback)
+        {
+            int count = 0;
+            int maxCount = sx * sy * sz;
+
+            Parallel.For(0, maxCount, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount / 2 },
+            (i) =>
+            {
+                int iz = i / (sx * sy);
+                int iy = (i % (sx * sy)) / sx;
+                int ix = (i % (sx * sy)) % sx;
+
+
+                if (ix == 0 && iy == 0)
+                {
+                    int c = System.Threading.Interlocked.Increment(ref count);
+                    callback(c / (float)sz);
+                }
+
+                Vector3 point = lowerBound + new Vector3(ix, iy, iz) * pixelsToScene;
+
+                float sceneDistance;
+                Vector3 triangleWeights;
+                int triangleId;
+
+                float pixelDistance;
+
+                bool empty = !FindTriangles(point, out sceneDistance, out triangleWeights, out triangleId);
+
+                pixelDistance = Math.Sign(sceneDistance) * Math.Min(Math.Abs(sceneDistance / pixelsToScene), 1.0f);
+
+                // distance in brick units [-1.0;1.0] where 1 corresponds to brick size
+                data[i * 4 + 0] = pixelDistance;
+                data[i * 4 + 1] = triangleWeights.X;
+                data[i * 4 + 2] = triangleWeights.Y;
+                data[i * 4 + 3] = triangleId;
+            }
+            );
         }
 
     }
