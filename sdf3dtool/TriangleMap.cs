@@ -688,7 +688,7 @@ namespace SDFTool
             return (tmin <= tzmax) && (tmax >= tzmin);
         }
 
-        public void Dispatch(float[] data, Vector3 lowerBound, float pixelsToScene, int sx, int sy, int sz, Action<float> callback)
+        public void Dispatch(float[] data, Vector3 lowerBound, float pixelsToScene, float sceneToPixels, int sx, int sy, int sz, Action<float> callback)
         {
             int count = 0;
             int maxCount = sx * sy * sz;
@@ -717,7 +717,7 @@ namespace SDFTool
 
                 bool empty = !FindTriangles(point, out sceneDistance, out triangleWeights, out triangleId);
 
-                pixelDistance = Math.Sign(sceneDistance) * Math.Min(Math.Abs(sceneDistance / pixelsToScene), 1.0f);
+                pixelDistance = Math.Sign(sceneDistance) * Math.Min(Math.Abs(sceneDistance * sceneToPixels), 1.0f);
 
                 // distance in brick units [-1.0;1.0] where 1 corresponds to brick size
                 data[i * 4 + 0] = pixelDistance;

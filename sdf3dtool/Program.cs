@@ -5,10 +5,12 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using Assimp;
 using RunMobile.Utility;
 
 using Vector = System.Numerics.Vector3;
+using Vector4 = System.Numerics.Vector4;
 
 namespace SDFTool
 {
@@ -17,7 +19,7 @@ namespace SDFTool
         private static readonly string s_syntax = "Syntax: {0} input.dae output.ktx [grid_cells] [lod_0_size] [top_lod_cell_size]\n" +
         "\n";
 
-        #region Assimp scene to triangles
+        #region Assimp specific
 
         private static Node FindMeshNode(Node node, int meshIndex)
         {
@@ -205,9 +207,126 @@ namespace SDFTool
             return triangleList.ToArray();
         }
 
+
+        private static PixelData[] GetPixelData(float[] distanceData, IDictionary<int, (int, float)[]> boneDictionary, PreparedTriangle[] triangleList)
+        {
+            PixelData[] data = new PixelData[distanceData.Length / 4];
+
+            for (int i = 0; i < data.Length; i++)
+            {
+                float pixelDistance = distanceData[i * 4 + 0];
+                float u = distanceData[i * 4 + 1];
+                float v = distanceData[i * 4 + 2];
+                int triangleId = (int)distanceData[i * 4 + 3];
+
+                float textureU = 0;
+                float textureV = 0;
+                Vector4i pixelBones = default;
+                Vector4 pixelBoneWeights = default;
+
+                if (triangleId != -1)
+                {
+                    Vector triangleWeights = new Vector(u, v, 1.0f - u - v);
+
+                    PreparedTriangle triangle = triangleList[triangleId];
+
+                    if (triangle != null)
+                    {
+                        // Saved triangle data
+                        Tuple<Mesh, Face> tuple = (Tuple<Mesh, Face>)triangle.Data;
+                        Mesh mesh = tuple.Item1;
+                        Face face = tuple.Item2;
+
+                        if (mesh.TextureCoordinateChannelCount > 0 && mesh.TextureCoordinateChannels[0].Count > 0)
+                        {
+                            Vector3D tca = mesh.TextureCoordinateChannels[0][face.Indices[0]];
+                            Vector3D tcb = mesh.TextureCoordinateChannels[0][face.Indices[1]];
+                            Vector3D tcc = mesh.TextureCoordinateChannels[0][face.Indices[2]];
+
+                            Vector3D tc = tca * triangleWeights.X + tcb * triangleWeights.Y + tcc * triangleWeights.Z;
+
+                            if (tc.X < 0 || tc.Y < 0 || tc.X > 1 || tc.Y > 1 || tc.Z != 0)
+                                Console.WriteLine("Result weights are invalid: {0}!", tc);
+
+                            // texture coords
+                            textureU = tc.X;
+                            textureV = tc.Y;
+                        }
+
+                        if (Math.Abs(pixelDistance) <= 1.0f) // no need to calculate weight for non-surface points
+                        {
+                            Dictionary<int, float[]> weights = new Dictionary<int, float[]>();
+
+                            for (int k = 0; k < face.IndexCount; k++)
+                            {
+                                ValueTuple<int, float>[] list;
+                                if (boneDictionary.TryGetValue(face.Indices[k], out list))
+                                {
+                                    foreach (var pair in list)
+                                    {
+                                        float[] bweight;
+                                        if (!weights.TryGetValue(pair.Item1, out bweight))
+                                            weights[pair.Item1] = bweight = new float[face.IndexCount];
+
+                                        bweight[k] = pair.Item2;
+                                    }
+                                }
+                            }
+
+                            List<ValueTuple<float, int>> boneWeights = new List<ValueTuple<float, int>>();
+
+                            foreach (var pair in weights)
+                            {
+                                float weight = pair.Value[0] * triangleWeights.X + pair.Value[1] * triangleWeights.Y + pair.Value[2] * triangleWeights.Z;
+                                if (weight > 0.01f)
+                                    boneWeights.Add(new ValueTuple<float, int>(weight, pair.Key));
+                            }
+
+                            boneWeights.Sort((x, y) => y.Item1.CompareTo(y.Item1)); // sort descending by weight
+
+                            float maxWeight = boneWeights.Count > 0 ? boneWeights[0].Item1 : 0;
+                            int maxBoneId = boneWeights.Count > 0 ? boneWeights[0].Item2 : 0;
+                            float secondWeight = boneWeights.Count > 1 ? boneWeights[1].Item1 : 0;
+                            int secondBoneId = boneWeights.Count > 1 ? boneWeights[1].Item2 : 0;
+                            float thirdWeight = boneWeights.Count > 2 ? boneWeights[2].Item1 : 0;
+                            int thirdBoneId = boneWeights.Count > 2 ? boneWeights[2].Item2 : 0;
+                            float fourthWeight = boneWeights.Count > 3 ? boneWeights[3].Item1 : 0;
+                            int fourthBoneId = boneWeights.Count > 3 ? boneWeights[3].Item2 : 0;
+
+                            pixelBones = new Vector4i(maxBoneId, secondBoneId, thirdBoneId, fourthBoneId);
+                            pixelBoneWeights = new Vector4(maxWeight, secondWeight, thirdWeight, fourthWeight);
+                        }
+                    }
+
+                }
+                data[i] = new PixelData(pixelDistance, textureU, textureV, pixelBones, pixelBoneWeights);
+            }
+
+            return data;
+        }
+
         #endregion
 
-        private static void ProcessAssimpImport(string fileName, string outFile, string textureFile = null, int gridCellCount = 64, int lod0pixels = 32, int topLodCellSize = 4)
+        struct PixelData
+        {
+            public readonly Vector DistanceUV;
+            public readonly Vector4i Bones;
+            public readonly Vector4 BoneWeights;
+
+            public PixelData(float distance, float u, float v, Vector4i bones, Vector4 weights)
+            {
+                DistanceUV = new Vector(distance, u, v);
+                Bones = bones;
+                BoneWeights = weights;
+            }
+        }
+
+        private static T GetArrayData<T>(T[] data, Vector3i dataSize, Vector3i coord)
+        {
+            return data[coord.X + coord.Y * dataSize.X + coord.Z * dataSize.X * dataSize.Y];
+        }
+
+        private static void ProcessAssimpImport(string fileName, string outFile, int gridCellCount = 64, int lod0pixels = 32, int topLodCellSize = 4)
         {
             if (topLodCellSize <= 2)//(topLodCellSize & (topLodCellSize - 1)) != 0)
             {
@@ -235,11 +354,6 @@ namespace SDFTool
 
             Console.WriteLine("[{0}] File loaded", sw.Elapsed);
 
-#if USE_TEXTURE
-            int textureWidth = 0;
-            int textureHeight = 0;
-            int[] texture = textureFile == null ? null : Helper.LoadBitmap(textureFile, out textureWidth, out textureHeight);
-#endif
             float scale = 1;
 
             Vector sceneMin;
@@ -270,7 +384,7 @@ namespace SDFTool
 
             // divide by this value to convert scene units to 0..1
             float sceneToRelative = maxSide;
-                
+
 
             // exact number of pixels 
 
@@ -290,14 +404,14 @@ namespace SDFTool
             sy++;
             sz++;
 
+            Vector3i dataSize = new Vector3i(sx, sy, sz);
+
             float padding = topLodCellSize * pixelsToScene;
 
             Vector lowerBound = sceneMin - new Vector(padding);
             Vector upperBound = sceneMax + new Vector(padding);
 
             Console.WriteLine("[{0}] File preprocessed. X: {1}, Y: {2}, Z: {3}, maximum distance: {4}", sw.Elapsed, sx, sy, sz, sceneToRelative);
-
-            //float emptyCellCheckDistance = topLodCellSize * 0.5f;
 
             int maxcount = sz * sy * sx;
 
@@ -308,107 +422,13 @@ namespace SDFTool
 
             Console.WriteLine("Bounding box: {0} - {1}, step {2}, triangles {3}, cells {4}, instances {5}", sceneMin, sceneMax, sceneToPixels, triangleMap.TriangleCount, triangleMap.CellsUsed, triangleMap.TriangleInstances);
 
-            triangleMap.Dispatch(distanceData, lowerBound, pixelsToScene, sx, sy, sz, (progress) => Console.WriteLine("[{0}] Processing {1:P2}", sw.Elapsed, progress));
+            triangleMap.Dispatch(distanceData, lowerBound, pixelsToScene, sceneToPixels / topLodCellSize, sx, sy, sz, (progress) => Console.WriteLine("[{0}] Processing {1:P2}", sw.Elapsed, progress));
 
-            Array3D<float> data = new Array3D<float>(13, sx, sy, sz); // we are using lod 2 data for processing
-
-            for (int i = 0; i < maxcount; i++)
-            {
-                float pixelDistance = distanceData[i * 4 + 0] / topLodCellSize;
-                float u = distanceData[i * 4 + 1];
-                float v = distanceData[i * 4 + 2];
-                int triangleId = (int)distanceData[i * 4 + 3];
-
-
-                data[i * 13 + 0] = pixelDistance;
-
-                if (triangleId == -1)
-                    continue;
-
-                Vector triangleWeights = new Vector(u, v, 1.0f - u - v);
-
-                PreparedTriangle triangle = triangleList[triangleId];
-
-                if (triangle == null)
-                    continue;
-                {
-                    // Saved triangle data
-                    Tuple<Mesh, Face> tuple = (Tuple<Mesh, Face>)triangle.Data;
-                    Mesh mesh = tuple.Item1;
-                    Face face = tuple.Item2;
-
-                    if (mesh.TextureCoordinateChannelCount > 0 && mesh.TextureCoordinateChannels[0].Count > 0)
-                    {
-                        Vector3D tca = mesh.TextureCoordinateChannels[0][face.Indices[0]];
-                        Vector3D tcb = mesh.TextureCoordinateChannels[0][face.Indices[1]];
-                        Vector3D tcc = mesh.TextureCoordinateChannels[0][face.Indices[2]];
-
-                        Vector3D tc = tca * triangleWeights.X + tcb * triangleWeights.Y + tcc * triangleWeights.Z;
-
-                        if (tc.X < 0 || tc.Y < 0 || tc.X > 1 || tc.Y > 1 || tc.Z != 0)
-                            Console.WriteLine("Result weights are invalid: {0}!", tc);
-
-                        // texture coords
-                        data[i * 13 + 1] = tc.X;
-                        data[i * 13 + 2] = tc.Y;
-                    }
-
-                    if (Math.Abs(pixelDistance) <= 1.0f) // no need to calculate weight for non-surface points
-                    {
-                        Dictionary<int, float[]> weights = new Dictionary<int, float[]>();
-
-                        for (int k = 0; k < face.IndexCount; k++)
-                        {
-                            ValueTuple<int, float>[] list;
-                            if (boneDictionary.TryGetValue(face.Indices[k], out list))
-                            {
-                                foreach (var pair in list)
-                                {
-                                    float[] bweight;
-                                    if (!weights.TryGetValue(pair.Item1, out bweight))
-                                        weights[pair.Item1] = bweight = new float[face.IndexCount];
-
-                                    bweight[k] = pair.Item2;
-                                }
-                            }
-                        }
-
-                        List<ValueTuple<float, int>> boneWeights = new List<ValueTuple<float, int>>();
-
-                        foreach (var pair in weights)
-                        {
-                            float weight = pair.Value[0] * triangleWeights.X + pair.Value[1] * triangleWeights.Y + pair.Value[2] * triangleWeights.Z;
-                            if (weight > 0.01f)
-                                boneWeights.Add(new ValueTuple<float, int>(weight, pair.Key));
-                        }
-
-                        boneWeights.Sort((x, y) => y.Item1.CompareTo(y.Item1)); // sort descending by weight
-
-                        float maxWeight = boneWeights.Count > 0 ? boneWeights[0].Item1 : 0;
-                        int maxBoneId = boneWeights.Count > 0 ? boneWeights[0].Item2 : 0;
-                        float secondWeight = boneWeights.Count > 1 ? boneWeights[1].Item1 : 0;
-                        int secondBoneId = boneWeights.Count > 1 ? boneWeights[1].Item2 : 0;
-                        float thirdWeight = boneWeights.Count > 2 ? boneWeights[2].Item1 : 0;
-                        int thirdBoneId = boneWeights.Count > 2 ? boneWeights[2].Item2 : 0;
-                        float fourthWeight = boneWeights.Count > 3 ? boneWeights[3].Item1 : 0;
-                        int fourthBoneId = boneWeights.Count > 3 ? boneWeights[3].Item2 : 0;
-
-                        data[i * 13 + 5] = maxBoneId;
-                        data[i * 13 + 6] = maxWeight;
-                        data[i * 13 + 7] = secondBoneId;
-                        data[i * 13 + 8] = secondWeight;
-                        data[i * 13 + 9] = thirdBoneId;
-                        data[i * 13 + 10] = thirdWeight;
-                        data[i * 13 + 11] = fourthBoneId;
-                        data[i * 13 + 12] = fourthWeight;
-                    }
-                    // indices 5+ should be weights for the bones and bone numbers
-                }
-            }
+            PixelData[] data = GetPixelData(distanceData, boneDictionary, triangleList);
 
             Console.WriteLine("[{0}] SDF data ready", sw.Elapsed);
 
-            // split to cells
+            // find non-empty cells
 
             int usedCells = 0;
             int cellsx = sx / topLodCellSize;
@@ -417,7 +437,11 @@ namespace SDFTool
 
             int totalCells = cellsx * cellsy * cellsz;
 
-            Tuple<Array3D<float>, float, float, Vector>[] cells = new Tuple<Array3D<float>, float, float, Vector>[totalCells];
+            int blockWidth = paddedTopLodCellSize;
+            int blockHeight = paddedTopLodCellSize;
+            int blockDepth = paddedTopLodCellSize;
+
+            float[] cells = new float[totalCells];
 
             for (int iz = 0; iz < cellsz; iz++)
             {
@@ -425,23 +449,20 @@ namespace SDFTool
                 {
                     for (int ix = 0; ix < cellsx; ix++)
                     {
-                        int index = ix + iy * cellsx + iz * cellsx * cellsy;
-
-                        Array3D<float> block = data.GetBlock(ix * topLodCellSize, iy * topLodCellSize, iz * topLodCellSize, paddedTopLodCellSize, paddedTopLodCellSize, paddedTopLodCellSize, new float[] { float.MaxValue, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 });
+                        Vector3i dataStart = new Vector3i(ix * topLodCellSize, iy * topLodCellSize, iz * topLodCellSize);
 
                         float minDistance = float.MaxValue;
-
-                        Vector minPoint = new Vector();
 
                         int countPositive = 0;
                         int countNegative = 0;
 
-                        for (int z = 0; z < block.Depth; z++)
-                            for (int y = 0; y < block.Height; y++)
-                                for (int x = 0; x < block.Width; x++)
-                                //for (int i = 0; i < block.Data.Length; i += block.Components)
+                        for (int z = 0; z < blockDepth; z++)
+                            for (int y = 0; y < blockHeight; y++)
+                                for (int x = 0; x < blockWidth; x++)
                                 {
-                                    float distance = block[x, y, z, 0];
+                                    PixelData pixel = GetArrayData(data, dataSize, dataStart + new Vector3i(x, y, z));
+
+                                    float distance = pixel.DistanceUV.X;
 
                                     if (distance > 0)
                                         countPositive++;
@@ -452,23 +473,20 @@ namespace SDFTool
                                     if (Math.Abs(distance) < minDistance)
                                     {
                                         minDistance = Math.Abs(distance);
-                                        minPoint = new Vector((float)x / block.Width, (float)y / block.Height, (float)z / block.Depth);
                                     }
                                 }
 
-                        float[] distancePercentageArr = GetTrilinear(block, topLodCellSize / 2.0f, topLodCellSize / 2.0f, topLodCellSize / 2.0f);
 
-                        float distancePercentage = distancePercentageArr[0]; // central point
-
-                        if ((countPositive != 0 && countNegative != 0))// || minDistance < emptyCellCheckDistance) // all neg or all pos is ignored
+                        if ((countPositive != 0 && countNegative != 0)) // all neg or all pos is ignored
                         {
                             usedCells++;
                         }
                         else
                         {
-                            block = null;
+                            minDistance = -minDistance;
                         }
-                        cells[index] = new Tuple<Array3D<float>, float, float, Vector>(block, distancePercentage, minDistance, minPoint);
+
+                        cells[ix + iy * cellsx + iz * cellsx * cellsy] = minDistance;
                     }
                 }
             }
@@ -512,7 +530,7 @@ namespace SDFTool
                 usedCells,
                 topLodCellSize,
                 topLodDistance.Bytes,
-                data.Bytes,
+                maxcount * Marshal.SizeOf<PixelData>(),
                 packx, packy, packz
                 );
 
@@ -544,9 +562,11 @@ namespace SDFTool
                         int atlasY = 0;
                         int atlasZ = 0;
 
-                        Tuple<Array3D<float>, float, float, Vector> cell = cells[index];
+                        float distancePercentage = cells[index];
 
-                        if (cell.Item1 != null)
+                        if (distancePercentage < 0)
+                            distancePercentage = -distancePercentage;
+                        else
                         {
                             // Add used cell to 3D atlas TODO: move this code to separate function
                             brickId++;
@@ -561,36 +581,27 @@ namespace SDFTool
                             if (atlasX >= 256 || atlasY >= 256 || atlasZ >= 256)
                                 throw new Exception("Too big atlas index for partial LOD: " + brickId + "!");
 
-                            Array3D<float> distanceBlock = new Array3D<float>(1, paddedTopLodCellSize, paddedTopLodCellSize, paddedTopLodCellSize);
+                            float[] distanceBlock = new float[blockWidth * blockHeight * blockDepth];
 
-                            Array3D<float> uvBlock = new Array3D<float>(2, paddedTopLodCellSize, paddedTopLodCellSize, paddedTopLodCellSize);
+                            Vector3i dataStart = new Vector3i(ix * topLodCellSize, iy * topLodCellSize, iz * topLodCellSize);
 
-                            Array3D<byte> textureBlock = new Array3D<byte>(4, paddedTopLodCellSize, paddedTopLodCellSize, paddedTopLodCellSize);
-
-                            for (int z = 0; z < cell.Item1.Depth; z++)
-                                for (int y = 0; y < cell.Item1.Height; y++)
-                                    for (int x = 0; x < cell.Item1.Width; x++)
+                            for (int z = 0; z < blockDepth; z++)
+                                for (int y = 0; y < blockHeight; y++)
+                                    for (int x = 0; x < blockWidth; x++)
                                     {
-                                        float distance = cell.Item1[x, y, z, 0];
-                                        float u = cell.Item1[x, y, z, 1];
-                                        float v = cell.Item1[x, y, z, 2];
+                                        PixelData pixel = GetArrayData(data, dataSize, dataStart + new Vector3i(x, y, z));
+                                        int blockIndex = x + y * blockWidth + z * blockWidth * blockHeight;
 
-                                        distanceBlock[x, y, z, 0] = distance;
+                                        distanceBlock[blockIndex] = pixel.DistanceUV.X;
 
-                                        uvBlock[x, y, z, 0] = u;
-                                        uvBlock[x, y, z, 1] = v;
-#if USE_TEXTURE
-                                        if (texture != null)
-                                        {
-                                            int textureColor = texture != null ? texture[(int)(Helper.Clamp(u * textureWidth, 0.0f, textureWidth - 1)) + ((int)Helper.Clamp((1.0f - v) * textureHeight, 0.0f, textureHeight - 1)) * textureWidth] : 0;
-
-                                            textureBlock[x, y, z, 0] = (byte)(textureColor >> 16);
-                                            textureBlock[x, y, z, 1] = (byte)(textureColor >> 8);
-                                            textureBlock[x, y, z, 2] = (byte)(textureColor);
-                                            textureBlock[x, y, z, 3] = (byte)(textureColor >> 24);
-                                        }
-#endif
+                                        topLoduv[atlasX * paddedTopLodCellSize + x, atlasY * paddedTopLodCellSize + y, atlasZ * paddedTopLodCellSize + z, 0] = Helper.PackFloatToUShort(pixel.DistanceUV.Y);
+                                        topLoduv[atlasX * paddedTopLodCellSize + x, atlasY * paddedTopLodCellSize + y, atlasZ * paddedTopLodCellSize + z, 1] = Helper.PackFloatToUShort(pixel.DistanceUV.Z);
                                     }
+
+                            float[] distancePercentageArr = GetTrilinear(distanceBlock, blockWidth, blockHeight, blockDepth, 1, topLodCellSize / 2.0f, topLodCellSize / 2.0f, topLodCellSize / 2.0f);
+
+                            distancePercentage = distancePercentageArr[0]; // central point
+
 
 #if LOD0_8BIT
                             byte distByte = PackFloatToSByte(cell.Item2);
@@ -603,34 +614,28 @@ namespace SDFTool
                             //topLodDistance.PutBlock(distanceBlock, atlasX * paddedTopLodCellSize, atlasY * paddedTopLodCellSize, atlasZ * paddedTopLodCellSize, (k) => PackFloatToSByte(k * (maximumDistance / step) / topLodCellSize));
 #else
                             //dist = 0;
-                            topLodDistance.PutBlock(distanceBlock, atlasX * paddedTopLodCellSize, atlasY * paddedTopLodCellSize, atlasZ * paddedTopLodCellSize, (k) => Helper.PackFloatToUShort(k - dist));
+                            topLodDistance.PutBlock(distanceBlock, blockWidth, blockHeight, blockDepth, 1, atlasX * paddedTopLodCellSize, atlasY * paddedTopLodCellSize, atlasZ * paddedTopLodCellSize, (k, l) => Helper.PackFloatToUShort(k - dist));
 #endif
 
                             int lodSize = paddedTopLodCellSize;
                             for (int i = 1; i < nlods; i++)
                             {
                                 lodSize /= 2;
-                                Array3D<float> lodDistanceBlock = GenerateLod(distanceBlock, lodSize);
+                                float[] lodDistanceBlock = GenerateLod(distanceBlock, blockWidth, blockHeight, blockDepth, lodSize);
 
 #if LOD2_8BIT
-                                lodDistance[i].PutBlock(lodDistanceBlock, atlasX * lodSize, atlasY * lodSize, atlasZ * lodSize, (k) => PackFloatToSByte((k - dist) * packLodCoef));
+                                lodDistance[i].PutBlock(lodDistanceBlock, lodSize, lodSize, lodSize, 1, atlasX * lodSize, atlasY * lodSize, atlasZ * lodSize, (k, l) => PackFloatToSByte((k - dist) * packLodCoef));
 #else
-                                lodDistance[i].PutBlock(lodDistanceBlock, atlasX * lodSize, atlasY * lodSize, atlasZ * lodSize, (k) => Helper.PackFloatToUShort(k - dist));
+                                lodDistance[i].PutBlock(lodDistanceBlock, lodSize, lodSize, lodSize, 1, atlasX * lodSize, atlasY * lodSize, atlasZ * lodSize, (k, l) => Helper.PackFloatToUShort(k - dist));
 #endif
                             }
-
-                            topLoduv.PutBlock(uvBlock, atlasX * paddedTopLodCellSize, atlasY * paddedTopLodCellSize, atlasZ * paddedTopLodCellSize, Helper.PackFloatToUShort);
-#if USE_TEXTURE
-                            if (texture != null)
-                                topLodTexture.PutBlock(textureBlock, atlasX * paddedTopLodCellSize, atlasY * paddedTopLodCellSize, atlasZ * paddedTopLodCellSize);
-#endif
+                            
 
                             Vector boxStart = lowerBound + new Vector(ix, iy, iz) * boxStep;
                             System.Numerics.Matrix4x4 boxTextureMatrix =
-                                //System.Numerics.Matrix4x4.CreateTranslation(new Vector(-atlasX * paddedTopLodCellSize, -atlasY * paddedTopLodCellSize, -atlasZ * paddedTopLodCellSize));
                                 System.Numerics.Matrix4x4.Identity;
 
-                            ValueTuple<int, float>[][] boxBones = GetBoxWeights(weightCache, cell.Item1, ix, iy, iz, topLodCellSize * 0.25f);
+                            ValueTuple<int, float>[][] boxBones = GetBoxWeights(weightCache, data, dataSize, dataStart, blockWidth, blockHeight, blockDepth, ix, iy, iz);//, topLodCellSize * 0.25f);
 
                             Vector boxCenter = boxStart + boxStep / 2;
 
@@ -641,22 +646,21 @@ namespace SDFTool
                                 boxMatrix,
                                 boxTextureMatrix,
                                 MeshGenerator.ShapeType.Cube,
-                                /*MeshGenerator.ShapeFlags.GroupNumber | */MeshGenerator.ShapeFlags.NoNormals/* | MeshGenerator.ShapeFlags.VertexNumber *//*| MeshGenerator.ShapeFlags.ShapeNumber*/,
+                                MeshGenerator.ShapeFlags.NoNormals,
                                 new float[] {
                                     //0, 0, 0,// padding
                                     brickId
-                                    //atlasX * paddedTopLodCellSize, atlasY * paddedTopLodCellSize, atlasZ * paddedTopLodCellSize, brickId // box coord
                                 }, boxBones));
                         }
 
 #if LOD0_8BIT
-                        zeroLodData[ix, iy, iz, 0] = PackFloatToSByte(cell.Item2);
+                        zeroLodData[ix, iy, iz, 0] = PackFloatToSByte(distancePercentage);
 
                         zeroLodData[ix, iy, iz, 1] = (byte)(atlasX);
                         zeroLodData[ix, iy, iz, 2] = (byte)(atlasY);
                         zeroLodData[ix, iy, iz, 3] = (byte)(atlasZ);
 #else
-                        zeroLodData[ix, iy, iz, 0] = (new HalfFloat(cell.Item2/* * 0.5f + 0.5f*/)).Data;//(new HalfFloat(cell.Item1 * 0.5f + 0.5f)).Data;
+                        zeroLodData[ix, iy, iz, 0] = (new HalfFloat(distancePercentage)).Data;
                         zeroLodData[ix, iy, iz, 1] = (new HalfFloat(atlasX)).Data;
                         zeroLodData[ix, iy, iz, 2] = (new HalfFloat(atlasY)).Data;
                         zeroLodData[ix, iy, iz, 3] = (new HalfFloat(atlasZ)).Data;
@@ -679,10 +683,6 @@ namespace SDFTool
 
             Helper.SaveKTX(Helper.KTX_RG16F, topLoduv, outFile, "_lod_2_uv.3d.ktx");
 
-#if USE_TEXTURE
-            if (texture != null)
-                Helper.SaveKTX(Helper.KTX_RGBA8, topLodTexture, outFile, "_lod_2_texture.3d.ktx");
-#endif
             Console.WriteLine("[{0}] KTX saved, saving boundary mesh", sw.Elapsed);
 
             MeshGenerator.Surface[] boxesSurface = new MeshGenerator.Surface[] { MeshGenerator.CreateBoxesMesh(boxes.ToArray(), "main_box") };
@@ -709,48 +709,51 @@ namespace SDFTool
             new Vector3i(0,0,1),
         };
 
-
-        private static ValueTuple<int, float>[][] GetBoxWeights(Dictionary<Vector3i, ValueTuple<int, float>[]> cache, Array3D<float> data, int ix, int iy, int iz, float step)
+        private static ValueTuple<int, float>[][] GetBoxWeights(
+            Dictionary<Vector3i, ValueTuple<int, float>[]> cache,
+            PixelData [] data, Vector3i dataSize, Vector3i dataStart,
+            int blockWidth, int blockHeight, int blockDepth,
+            int ix, int iy, int iz)
         {
-            int ubx = data.Width - 1;
-            int uby = data.Height - 1;
-            int ubz = data.Depth - 1;
+            int ubx = blockWidth - 1;
+            int uby = blockHeight - 1;
+            int ubz = blockDepth - 1;
 
             ValueTuple<int, float>[][] result = new ValueTuple<int, float>[8][];
 
-            List<ValueTuple<Vector, ValueTuple<int, float>[]>>[] vertexWeights = new List<ValueTuple<Vector, ValueTuple<int, float>[]>>[8];
+            List<ValueTuple<Vector, Vector4i, Vector4>> [] vertexWeights = new List<ValueTuple<Vector, Vector4i, Vector4>>[8];
 
             for (int i = 0; i < 8; i++)
-                vertexWeights[i] = new List<(Vector, (int, float)[])>();
+                vertexWeights[i] = new List<ValueTuple<Vector, Vector4i, Vector4>>();
 
-            for (int z = 0; z < data.Depth - 1; z++)
-                for (int y = 0; y < data.Height - 1; y++)
-                    for (int x = 0; x < data.Width - 1; x++)
+            for (int z = 0; z < blockDepth - 1; z++)
+                for (int y = 0; y < blockHeight - 1; y++)
+                    for (int x = 0; x < blockWidth - 1; x++)
                     {
-                        float dist = data[x, y, z, 0];
+                        PixelData pixelData = GetArrayData(data, dataSize, dataStart + new Vector3i(x,y,z));
+
+                        float dist = pixelData.DistanceUV.X;
                         int sign = Math.Sign(dist);
 
                         // checks if a surface crosses nearest 2x2x2 texel cube
                         if (Math.Abs(dist) <= 1 ||
-                            sign != Math.Sign(data[x + 1, y + 0, z + 0, 0]) ||
-                            sign != Math.Sign(data[x + 0, y + 1, z + 0, 0]) ||
-                            sign != Math.Sign(data[x + 1, y + 1, z + 0, 0]) ||
-                            sign != Math.Sign(data[x + 1, y + 0, z + 1, 0]) ||
-                            sign != Math.Sign(data[x + 0, y + 1, z + 1, 0]) ||
-                            sign != Math.Sign(data[x + 1, y + 1, z + 1, 0]) ||
-                            sign != Math.Sign(data[x + 1, y + 1, z + 1, 0])
+                            sign != Math.Sign(GetArrayData(data, dataSize, dataStart + new Vector3i(x + 1, y + 0, z + 0)).DistanceUV.X) ||
+                            sign != Math.Sign(GetArrayData(data, dataSize, dataStart + new Vector3i(x + 0, y + 1, z + 0)).DistanceUV.X) ||
+                            sign != Math.Sign(GetArrayData(data, dataSize, dataStart + new Vector3i(x + 1, y + 1, z + 0)).DistanceUV.X) ||
+                            sign != Math.Sign(GetArrayData(data, dataSize, dataStart + new Vector3i(x + 1, y + 0, z + 1)).DistanceUV.X) ||
+                            sign != Math.Sign(GetArrayData(data, dataSize, dataStart + new Vector3i(x + 0, y + 1, z + 1)).DistanceUV.X) ||
+                            sign != Math.Sign(GetArrayData(data, dataSize, dataStart + new Vector3i(x + 1, y + 1, z + 1)).DistanceUV.X) ||
+                            sign != Math.Sign(GetArrayData(data, dataSize, dataStart + new Vector3i(x + 1, y + 1, z + 1)).DistanceUV.X)
                             )
                         {
-                            var weigths = GetWeights(data, x, y, z, 5, 6, 7, 8, 9, 10, 11, 12);
-
-                            vertexWeights[0].Add(new ValueTuple<Vector, ValueTuple<int, float>[]>(new Vector(x, y, z), weigths));
-                            vertexWeights[1].Add(new ValueTuple<Vector, ValueTuple<int, float>[]>(new Vector(ubx - x, y, z), weigths));
-                            vertexWeights[2].Add(new ValueTuple<Vector, ValueTuple<int, float>[]>(new Vector(ubx - x, uby - y, z), weigths));
-                            vertexWeights[3].Add(new ValueTuple<Vector, ValueTuple<int, float>[]>(new Vector(x, uby - y, z), weigths));
-                            vertexWeights[4].Add(new ValueTuple<Vector, ValueTuple<int, float>[]>(new Vector(x, uby - y, ubz - z), weigths));
-                            vertexWeights[5].Add(new ValueTuple<Vector, ValueTuple<int, float>[]>(new Vector(ubx - x, uby - y, ubz - z), weigths));
-                            vertexWeights[6].Add(new ValueTuple<Vector, ValueTuple<int, float>[]>(new Vector(ubx - x, y, ubz - z), weigths));
-                            vertexWeights[7].Add(new ValueTuple<Vector, ValueTuple<int, float>[]>(new Vector(x, y, ubz - z), weigths));
+                            vertexWeights[0].Add(new ValueTuple<Vector, Vector4i, Vector4>(new Vector(x, y, z), pixelData.Bones, pixelData.BoneWeights));
+                            vertexWeights[1].Add(new ValueTuple<Vector, Vector4i, Vector4>(new Vector(ubx - x, y, z), pixelData.Bones, pixelData.BoneWeights));
+                            vertexWeights[2].Add(new ValueTuple<Vector, Vector4i, Vector4>(new Vector(ubx - x, uby - y, z), pixelData.Bones, pixelData.BoneWeights));
+                            vertexWeights[3].Add(new ValueTuple<Vector, Vector4i, Vector4>(new Vector(x, uby - y, z), pixelData.Bones, pixelData.BoneWeights));
+                            vertexWeights[4].Add(new ValueTuple<Vector, Vector4i, Vector4>(new Vector(x, uby - y, ubz - z), pixelData.Bones, pixelData.BoneWeights));
+                            vertexWeights[5].Add(new ValueTuple<Vector, Vector4i, Vector4>(new Vector(ubx - x, uby - y, ubz - z), pixelData.Bones, pixelData.BoneWeights));
+                            vertexWeights[6].Add(new ValueTuple<Vector, Vector4i, Vector4>(new Vector(ubx - x, y, ubz - z), pixelData.Bones, pixelData.BoneWeights));
+                            vertexWeights[7].Add(new ValueTuple<Vector, Vector4i, Vector4>(new Vector(x, y, ubz - z), pixelData.Bones, pixelData.BoneWeights));
                         }
                     }
 
@@ -766,17 +769,35 @@ namespace SDFTool
                     //Manhattan distance to the pixel
                     //float weight = Vector.Dot(new Vector(1, 1, 1) - pair.Item1 / new Vector(ubx, uby, ubz), new Vector(1, 1, 1));
 
-                    foreach (var bone in pair.Item2)
-                    {
-                        ValueTuple<float, int> oldValue;
-                        if (!weightValues.TryGetValue(bone.Item1, out oldValue))
-                            oldValue = new ValueTuple<float, int>(0, 0);
+                    for (int b = 0; b < 4; b++)
+                        if (pair.Item2[b] != 0)
+                        {
+                            ValueTuple<float, int> oldValue;
+                            if (!weightValues.TryGetValue(pair.Item2[b], out oldValue))
+                                oldValue = new ValueTuple<float, int>(0, 0);
 
-                        oldValue.Item1 += bone.Item2 * weight;
-                        oldValue.Item2++;
+                            float w = 0.0f;
+                            switch (b)
+                            {
+                                case 0:
+                                    w = pair.Item3.X;
+                                    break;
+                                case 1:
+                                    w = pair.Item3.Y;
+                                    break;
+                                case 2:
+                                    w = pair.Item3.Z;
+                                    break;
+                                case 3:
+                                    w = pair.Item3.W;
+                                    break;
+                            }
 
-                        weightValues[bone.Item1] = oldValue;
-                    }
+                            oldValue.Item1 += w * weight;
+                            oldValue.Item2++;
+
+                            weightValues[pair.Item2[b]] = oldValue;
+                        }
                 }
 
                 Vector3i index = new Vector3i(ix + s_boxIndices[i].X, iy + s_boxIndices[i].Y, iz + s_boxIndices[i].Z);
@@ -830,31 +851,7 @@ namespace SDFTool
             return result;
         }
 
-        private static ValueTuple<int, float>[] GetWeights(Dictionary<Vector3i, ValueTuple<int, float>[]> cache, Vector3i index, Array3D<float> data, int ix, int iy, int iz, params int[] indices)
-        {
-            ValueTuple<int, float>[] result;
-
-            if (!cache.TryGetValue(index, out result))
-            {
-                result = GetWeights(data, ix, iy, iz, indices);
-                cache[index] = result;
-            }
-            return result;
-        }
-
-        private static ValueTuple<int, float>[] GetWeights(Array3D<float> arr, int ix, int iy, int iz, params int[] indices)
-        {
-            ValueTuple<int, float>[] result;
-
-            result = new ValueTuple<int, float>[indices.Length / 2];
-
-            for (int i = 0; i < result.Length; i++)
-                result[i] = new ValueTuple<int, float>((int)arr[ix, iy, iz, indices[i * 2]], arr[ix, iy, iz, indices[i * 2 + 1]]);
-
-            return result;
-        }
-
-        private static float[] GetTrilinear(Array3D<float> arr, float px, float py, float pz)
+        private static float[] GetTrilinear(float[] block, int blockWidth, int blockHeight, int blockDepth, int components, float px, float py, float pz)
         {
             int ix = (int)px;
             int iy = (int)py;
@@ -888,27 +885,25 @@ namespace SDFTool
                         };
 
 
-            float[] result = new float[arr.Components];
-            for (int c = 0; c < result.Length; c++)
+            float[] result = new float[components];
+            for (int i = 0; i < coef.Length; i++)
             {
-                for (int i = 0; i < coef.Length; i++)
-                {
-                    Vector3i ip = new Vector3i(ix + shifts[i].X, iy + shifts[i].Y, iz + shifts[i].Z);
+                Vector3i ip = new Vector3i(ix + shifts[i].X, iy + shifts[i].Y, iz + shifts[i].Z);
 
-                    if (ip.X >= arr.Width || ip.Y >= arr.Height || ip.Z >= arr.Depth)
-                        continue;
+                if (ip.X >= blockWidth || ip.Y >= blockHeight || ip.Z >= blockDepth)
+                    continue;
 
-                    result[c] += coef[i] * arr[ip.X, ip.Y, ip.Z, c];
-                }
+                for (int c = 0; c < components; c++)
+                    result[c] += coef[i] * block[ip.X + ip.Y * blockWidth + ip.Z * blockWidth * blockHeight];
             }
             return result;
         }
 
-        private static Array3D<float> GenerateLod(Array3D<float> topLodDistance, int lodSize)
+        private static float [] GenerateLod(float [] topLodDistance, int blockWidth, int blockHeight, int blockDepth, int lodSize)
         {
-            Array3D<float> result = new Array3D<float>(topLodDistance.Components, lodSize, lodSize, lodSize);
+            float [] result = new float[lodSize * lodSize * lodSize];
 
-            float step = (topLodDistance.Depth - 1.0f) / (lodSize - 1.0f);
+            float step = (blockDepth - 1.0f) / (lodSize - 1.0f);
 
             for (int nz = 0; nz < lodSize; nz++)
             {
@@ -916,12 +911,9 @@ namespace SDFTool
                 {
                     for (int nx = 0; nx < lodSize; nx++)
                     {
-                        float[] value = GetTrilinear(topLodDistance, nx * step, ny * step, nz * step);
+                        float[] value = GetTrilinear(topLodDistance, blockWidth, blockHeight, blockDepth, 1, nx * step, ny * step, nz * step);
 
-                        for (int c = 0; c < value.Length; c++)
-                        {
-                            result[nx, ny, nz, c] = value[c];
-                        }
+                        result[nx + ny * lodSize + nz * lodSize * lodSize] = value[0];
                     }
                 }
             }
@@ -952,15 +944,7 @@ namespace SDFTool
             int size = args.Length > 3 ? int.Parse(args[3]) : 32;
             int cellSize = args.Length > 4 ? int.Parse(args[4]) : 4;
 
-            string textureFileName = args.Length > 5 ? args[5] : null;
-
-            if (!string.IsNullOrEmpty(textureFileName) && !File.Exists(textureFileName))
-            {
-                Console.Error.WriteLine("Texture file {0} not found", textureFileName);
-                return;
-            }
-
-            ProcessAssimpImport(fileName, outFileName, textureFileName, gridSize, size, cellSize);
+            ProcessAssimpImport(fileName, outFileName, gridSize, size, cellSize);
         }
     }
 }

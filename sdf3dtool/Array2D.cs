@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 
 namespace SDFTool
 {
-    public class Array2D<T> where T : struct
+    public struct Array2D<T> where T : struct
     {
         private readonly int m_components;
         private readonly int m_width;

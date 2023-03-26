@@ -29,6 +29,60 @@ namespace SDFTool
             return LengthSqrd > other.LengthSqrd ? 1 : -1; // no equality!
             //return this.ToString().CompareTo(other.ToString());
         }
+
+        public static Vector3i operator +(Vector3i one, Vector3i another)
+        {
+            return new Vector3i(one.X + another.X, one.Y + another.Y, one.Z + another.Z);
+        }
+    }
+
+    public struct Vector4i : IComparable<Vector4i>
+    {
+        public readonly int X, Y, Z, W;
+        public readonly int LengthSqrd;
+
+        public int this[int i]
+        {
+            get
+            {
+                switch (i)
+                {
+                    case 0:
+                        return X;
+                    case 1:
+                        return Y;
+                    case 2:
+                        return Z;
+                    case 3:
+                        return W;
+                    default:
+                        throw new IndexOutOfRangeException();
+                }
+            }
+        }
+
+        public Vector4i(int x, int y, int z, int w)
+        {
+            X = x;
+            Y = y;
+            Z = z;
+            W = w;
+            LengthSqrd = X * X + Y * Y + Z * Z + w * W;
+        }
+
+        public override string ToString()
+        {
+            return String.Format("[{0}, {1}, {2}, {3}]", X, Y, Z, W);
+        }
+
+        public int CompareTo(Vector4i other)
+        {
+            if (X == other.X && Y == other.Y && Z == other.Z && W == other.W)
+                return 0;
+
+            return LengthSqrd > other.LengthSqrd ? 1 : -1; // no equality!
+            //return this.ToString().CompareTo(other.ToString());
+        }
     }
 
     public struct VectorPair
@@ -106,7 +160,7 @@ namespace SDFTool
             UpperBound.Z = Math.Max(Math.Max(a.Z, b.Z), c.Z);
         }
 
-#if !USE_OLD_DISTANCE
+#if USE_OLD_DISTANCE
         public static Vector3 ClosetPointToTriangle(PreparedTriangle t, Vector3 p, out Vector3 weights)
         {
             Vector3 pa = p - t.A;

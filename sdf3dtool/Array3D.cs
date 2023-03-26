@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 
 namespace SDFTool
 {
-    public class Array3D<T> where T:struct
+    public struct Array3D<T> where T:struct
     {
         private readonly int m_components;
         private readonly int m_width;
@@ -81,7 +81,7 @@ namespace SDFTool
             return x >= 0 && x < m_width && y >= 0 && y < m_height && z >= 0 && z < m_depth;
         }
 
-        public Array3D<T> GetBlock(int fromx, int fromy, int fromz, int w, int h, int d, T[] defaultValue)
+        public Array3D<T> GetBlock(int fromx, int fromy, int fromz, int w, int h, int d, params T[] defaultValue)
         {
             Debug.Assert(defaultValue == null || defaultValue.Length >= m_components);
 
@@ -143,7 +143,24 @@ namespace SDFTool
             }
         }
 
-        
+        public void PutBlock<K>(K [] block, int blockWidth, int blockHeight, int blockDepth, int components, int tox, int toy, int toz, Func<K, int, T> processor) where K : struct
+        {
+            for (int nz = 0; nz < blockDepth; nz++)
+            {
+                int bz = toz + nz;
+                for (int ny = 0; ny < blockHeight; ny++)
+                {
+                    int by = toy + ny;
+                    for (int nx = 0; nx < blockWidth; nx++)
+                    {
+                        int bx = tox + nx;
+
+                        for (int nc = 0; nc < m_components; nc++)
+                            this[bx, by, bz, nc] = processor(block[(nx + ny * blockWidth + nz * blockWidth * blockHeight) * components + nc], nc);
+                    }
+                }
+            }
+        }
     }
 }
 
