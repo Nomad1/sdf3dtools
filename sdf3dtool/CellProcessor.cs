@@ -3,20 +3,17 @@ using System.Collections.Generic;
 using System.Numerics;
 using RunMobile.Utility;
 
-using Vector = System.Numerics.Vector3;
-using Vector4 = System.Numerics.Vector4;
-
 namespace SDFTool
 {
     public struct PixelData
     {
-        public readonly Vector DistanceUV;
+        public readonly Vector3 DistanceUV;
         public readonly Vector4i Bones;
         public readonly Vector4 BoneWeights;
 
         public PixelData(float distance, float u, float v, Vector4i bones, Vector4 weights)
         {
-            DistanceUV = new Vector(distance, u, v);
+            DistanceUV = new Vector3(distance, u, v);
             Bones = bones;
             BoneWeights = weights;
         }
@@ -24,19 +21,30 @@ namespace SDFTool
 
     public static class CellProcessor
     {
-       
-        private static T GetArrayData<T>(T[] data, Vector3i dataSize, Vector3i coord)
-        {
-            return data[coord.X + coord.Y * dataSize.X + coord.Z * dataSize.X * dataSize.Y];
-        }
-
+       /// <summary>
+       /// Splits SDF pixel data to bricks
+       /// </summary>
+       /// <param name="data">input data</param>
+       /// <param name="dataSize">data size</param>
+       /// <param name="topLodCellSize"></param>
+       /// <param name="paddedTopLodCellSize"></param>
+       /// <param name="lowerBound"></param>
+       /// <param name="upperBound"></param>
+       /// <param name="nlods"></param>
+       /// <param name="lodDistance"></param>
+       /// <param name="topLoduv"></param>
+       /// <param name="zeroLodData"></param>
+       /// <param name="boxArray"></param>
+       /// <returns>cell count</returns>
         public static int ProcessCells(
             PixelData[] data, Vector3i dataSize,
 
             int topLodCellSize, int paddedTopLodCellSize,
-            Vector lowerBound, Vector upperBound,
+            Vector3 lowerBound, Vector3 upperBound,
             int nlods,
+            // TODO: return plain arrays, not Array3D
             out Array3D<ushort>[] lodDistance, out Array3D<ushort> topLoduv, out Array3D<ushort> zeroLodData,
+            // TODO: return structure for box creation
             out MeshGenerator.Shape [] boxArray)
         {
             List<MeshGenerator.Shape> boxes = new List<MeshGenerator.Shape>();
@@ -98,7 +106,7 @@ namespace SDFTool
 #else
             zeroLodData = new Array3D<ushort>(4, cellsx, cellsy, cellsz);
 #endif
-            Vector boxStep = (upperBound - lowerBound) / new Vector(cellsx, cellsy, cellsz);
+            Vector3 boxStep = (upperBound - lowerBound) / new Vector3(cellsx, cellsy, cellsz);
 
             int pxy = packx * packy;
             for (int iz = 0; iz < cellsz; iz++)
@@ -181,16 +189,14 @@ namespace SDFTool
                             }
 #endif
 
-                            Vector boxStart = lowerBound + new Vector(ix, iy, iz) * boxStep;
-                            System.Numerics.Matrix4x4 boxTextureMatrix =
-                                System.Numerics.Matrix4x4.Identity;
+                            Vector3 boxStart = lowerBound + new Vector3(ix, iy, iz) * boxStep;
+                            Matrix4x4 boxTextureMatrix = Matrix4x4.Identity;
 
                             ValueTuple<int, float>[][] boxBones = GetBoxWeights(weightCache, data, dataSize, dataStart, blockSize, ix, iy, iz);//, topLodCellSize * 0.25f);
 
-                            Vector boxCenter = boxStart + boxStep / 2;
+                            Vector3 boxCenter = boxStart + boxStep / 2;
 
-                            System.Numerics.Matrix4x4 boxMatrix =
-                                System.Numerics.Matrix4x4.CreateScale(boxStep) * System.Numerics.Matrix4x4.CreateTranslation(boxStart);
+                            Matrix4x4 boxMatrix = Matrix4x4.CreateScale(boxStep) * Matrix4x4.CreateTranslation(boxStart);
 
                             boxes.Add(new MeshGenerator.Shape(
                                 boxMatrix,
@@ -198,7 +204,6 @@ namespace SDFTool
                                 MeshGenerator.ShapeType.Cube,
                                 MeshGenerator.ShapeFlags.NoNormals,
                                 new float[] {
-                                    //0, 0, 0,// padding
                                     brickId
                                 }, boxBones));
                         }
@@ -303,10 +308,10 @@ namespace SDFTool
 
             ValueTuple<int, float>[][] result = new ValueTuple<int, float>[8][];
 
-            List<ValueTuple<Vector, Vector4i, Vector4>>[] vertexWeights = new List<ValueTuple<Vector, Vector4i, Vector4>>[8];
+            List<ValueTuple<Vector3, Vector4i, Vector4>>[] vertexWeights = new List<ValueTuple<Vector3, Vector4i, Vector4>>[8];
 
             for (int i = 0; i < 8; i++)
-                vertexWeights[i] = new List<ValueTuple<Vector, Vector4i, Vector4>>();
+                vertexWeights[i] = new List<ValueTuple<Vector3, Vector4i, Vector4>>();
 
             for (int z = 0; z < blockSize - 1; z++)
                 for (int y = 0; y < blockSize - 1; y++)
@@ -328,14 +333,14 @@ namespace SDFTool
                             sign != Math.Sign(GetArrayData(data, dataSize, dataStart + new Vector3i(x + 1, y + 1, z + 1)).DistanceUV.X)
                             )
                         {
-                            vertexWeights[0].Add(new ValueTuple<Vector, Vector4i, Vector4>(new Vector(x, y, z), pixelData.Bones, pixelData.BoneWeights));
-                            vertexWeights[1].Add(new ValueTuple<Vector, Vector4i, Vector4>(new Vector(ubx - x, y, z), pixelData.Bones, pixelData.BoneWeights));
-                            vertexWeights[2].Add(new ValueTuple<Vector, Vector4i, Vector4>(new Vector(ubx - x, uby - y, z), pixelData.Bones, pixelData.BoneWeights));
-                            vertexWeights[3].Add(new ValueTuple<Vector, Vector4i, Vector4>(new Vector(x, uby - y, z), pixelData.Bones, pixelData.BoneWeights));
-                            vertexWeights[4].Add(new ValueTuple<Vector, Vector4i, Vector4>(new Vector(x, uby - y, ubz - z), pixelData.Bones, pixelData.BoneWeights));
-                            vertexWeights[5].Add(new ValueTuple<Vector, Vector4i, Vector4>(new Vector(ubx - x, uby - y, ubz - z), pixelData.Bones, pixelData.BoneWeights));
-                            vertexWeights[6].Add(new ValueTuple<Vector, Vector4i, Vector4>(new Vector(ubx - x, y, ubz - z), pixelData.Bones, pixelData.BoneWeights));
-                            vertexWeights[7].Add(new ValueTuple<Vector, Vector4i, Vector4>(new Vector(x, y, ubz - z), pixelData.Bones, pixelData.BoneWeights));
+                            vertexWeights[0].Add(new ValueTuple<Vector3, Vector4i, Vector4>(new Vector3(x, y, z), pixelData.Bones, pixelData.BoneWeights));
+                            vertexWeights[1].Add(new ValueTuple<Vector3, Vector4i, Vector4>(new Vector3(ubx - x, y, z), pixelData.Bones, pixelData.BoneWeights));
+                            vertexWeights[2].Add(new ValueTuple<Vector3, Vector4i, Vector4>(new Vector3(ubx - x, uby - y, z), pixelData.Bones, pixelData.BoneWeights));
+                            vertexWeights[3].Add(new ValueTuple<Vector3, Vector4i, Vector4>(new Vector3(x, uby - y, z), pixelData.Bones, pixelData.BoneWeights));
+                            vertexWeights[4].Add(new ValueTuple<Vector3, Vector4i, Vector4>(new Vector3(x, uby - y, ubz - z), pixelData.Bones, pixelData.BoneWeights));
+                            vertexWeights[5].Add(new ValueTuple<Vector3, Vector4i, Vector4>(new Vector3(ubx - x, uby - y, ubz - z), pixelData.Bones, pixelData.BoneWeights));
+                            vertexWeights[6].Add(new ValueTuple<Vector3, Vector4i, Vector4>(new Vector3(ubx - x, y, ubz - z), pixelData.Bones, pixelData.BoneWeights));
+                            vertexWeights[7].Add(new ValueTuple<Vector3, Vector4i, Vector4>(new Vector3(x, y, ubz - z), pixelData.Bones, pixelData.BoneWeights));
                         }
                     }
 
@@ -346,10 +351,10 @@ namespace SDFTool
                 foreach (var pair in vertexWeights[i])
                 {
                     //Euclidian distance to the pixel
-                    //float weight = Vector.DistanceSquared(new Vector(1, 1, 1), pair.Item1 / new Vector(ubx, uby, ubz));
-                    float weight = Vector.Distance(new Vector(1, 1, 1), pair.Item1 / new Vector(ubx, uby, ubz));
+                    //float weight = Vector3.DistanceSquared(new Vector3(1, 1, 1), pair.Item1 / new Vector3(ubx, uby, ubz));
+                    float weight = Vector3.Distance(new Vector3(1, 1, 1), pair.Item1 / new Vector3(ubx, uby, ubz));
                     //Manhattan distance to the pixel
-                    //float weight = Vector.Dot(new Vector(1, 1, 1) - pair.Item1 / new Vector(ubx, uby, ubz), new Vector(1, 1, 1));
+                    //float weight = Vector3.Dot(new Vector3(1, 1, 1) - pair.Item1 / new Vector3(ubx, uby, ubz), new Vector3(1, 1, 1));
 
                     for (int b = 0; b < 4; b++)
                         if (pair.Item2[b] != 0)
@@ -505,6 +510,10 @@ namespace SDFTool
 
         #endregion
 
+        private static T GetArrayData<T>(T[] data, Vector3i dataSize, Vector3i coord)
+        {
+            return data[coord.X + coord.Y * dataSize.X + coord.Z * dataSize.X * dataSize.Y];
+        }
     }
 }
 

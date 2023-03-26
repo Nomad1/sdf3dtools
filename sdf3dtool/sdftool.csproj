@@ -52,6 +52,8 @@
     <Compile Include="Helper.Umesh.cs" />
     <Compile Include="Helper.Utils.cs" />
     <Compile Include="CellProcessor.cs" />
+    <Compile Include="Vector4i.cs" />
+    <Compile Include="Vector3i.cs" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Properties\" />
