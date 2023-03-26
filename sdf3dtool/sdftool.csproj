@@ -51,6 +51,7 @@
     <Compile Include="Helper.Assimp.cs" />
     <Compile Include="Helper.Umesh.cs" />
     <Compile Include="Helper.Utils.cs" />
+    <Compile Include="CellProcessor.cs" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Properties\" />
