@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Numerics;
 using RunMobile.Utility;
 
-namespace SDFTool
+namespace RunServer.SdfTool
 {
     public struct PixelData
     {
@@ -21,33 +21,32 @@ namespace SDFTool
 
     public static class CellProcessor
     {
-       /// <summary>
-       /// Splits SDF pixel data to bricks
-       /// </summary>
-       /// <param name="data">input data</param>
-       /// <param name="dataSize">data size</param>
-       /// <param name="topLodCellSize"></param>
-       /// <param name="paddedTopLodCellSize"></param>
-       /// <param name="lowerBound"></param>
-       /// <param name="upperBound"></param>
-       /// <param name="nlods"></param>
-       /// <param name="lodDistance"></param>
-       /// <param name="topLoduv"></param>
-       /// <param name="zeroLodData"></param>
-       /// <param name="boxArray"></param>
-       /// <returns>cell count</returns>
+        /// <summary>
+        /// Splits SDF pixel data to bricks
+        /// </summary>
+        /// <param name="data">input data</param>
+        /// <param name="dataSize">data size</param>
+        /// <param name="topLodCellSize"></param>
+        /// <param name="paddedTopLodCellSize"></param>
+        /// <param name="lowerBound"></param>
+        /// <param name="upperBound"></param>
+        /// <param name="nlods"></param>
+        /// <param name="distanceLods"></param>
+        /// <param name="topLoduv"></param>
+        /// <param name="zeroLodData"></param>
+        /// <param name="boxArray"></param>
+        /// <returns>cell count</returns>
         public static int ProcessCells(
             PixelData[] data, Vector3i dataSize,
 
             int topLodCellSize, int paddedTopLodCellSize,
             Vector3 lowerBound, Vector3 upperBound,
             int nlods,
-            // TODO: return plain arrays, not Array3D
-            out Array3D<ushort>[] lodDistance, out Array3D<ushort> topLoduv, out Array3D<ushort> zeroLodData,
-            // TODO: return structure for box creation
-            out MeshGenerator.Shape [] boxArray)
+            out Vector3i topLodTextureSize,
+            out float[][] distanceLods, out Vector2[] topLoduv, out Vector4[] zeroLodData,
+            out ValueTuple<Matrix4x4, int, ValueTuple<int, float>[][]>[] boxArray)
         {
-            List<MeshGenerator.Shape> boxes = new List<MeshGenerator.Shape>();
+            List<ValueTuple<Matrix4x4, int, ValueTuple<int, float>[][]>> boxes = new List<ValueTuple<Matrix4x4, int, ValueTuple<int, float>[][]>>();
             Dictionary<Vector3i, ValueTuple<int, float>[]> weightCache = new Dictionary<Vector3i, ValueTuple<int, float>[]>();
 
             int usedCells = 0;
@@ -58,55 +57,36 @@ namespace SDFTool
 
             int totalCells = cellsx * cellsy * cellsz;
 
-            int blockSize = paddedTopLodCellSize;
+            Vector3i blockSize = new Vector3i(paddedTopLodCellSize, paddedTopLodCellSize, paddedTopLodCellSize);
 
             float[] cells = new float[totalCells];
-            usedCells = CheckCells(data, dataSize, cellsx, cellsy, cellsz, topLodCellSize, blockSize, cells);
+            usedCells = CheckCells(data, dataSize, cellsx, cellsy, cellsz, topLodCellSize, paddedTopLodCellSize, cells);
 
             int packx;
             int packy;
             int packz;
-            Helper.FindBestDividers(usedCells + 1, out packx, out packy, out packz, 256);
+            FindBestDividers(usedCells + 1, out packx, out packy, out packz, 256);
 
+            topLodTextureSize = new Vector3i(packx * paddedTopLodCellSize, packy * paddedTopLodCellSize, packz * paddedTopLodCellSize);
 
-#if LOD2_8BIT
-            Array3D<byte>[] lodDistance = new Array3D<byte>[nlods];
+            distanceLods = new float[nlods][];
+
             {
                 int size = paddedTopLodCellSize;
                 for (int i = 0; i < nlods; i++)
                 {
-                    lodDistance[i] = new Array3D<byte>(1, packx * size, packy * size, packz * size);
+                    distanceLods[i] = new float[packx * size * packy * size * packz * size];
                     size /= 2;
                 }
             }
 
-            Array3D<byte> topLodDistance = lodDistance[0];
-#else
-            lodDistance = new Array3D<ushort>[nlods];
-            {
-                int size = paddedTopLodCellSize;
-                for (int i = 0; i < nlods; i++)
-                {
-                    lodDistance[i] = new Array3D<ushort>(1, packx * size, packy * size, packz * size);
-                    size /= 2;
-                }
-            }
+            topLoduv = new Vector2[packx * paddedTopLodCellSize * packy * paddedTopLodCellSize * packz * paddedTopLodCellSize];
 
-            Array3D<ushort> topLodDistance = lodDistance[0];
-#endif
+            zeroLodData = new Vector4[cellsx * cellsy * cellsz];
 
-            topLoduv = new Array3D<ushort>(2, packx * paddedTopLodCellSize, packy * paddedTopLodCellSize, packz * paddedTopLodCellSize);
-            Array3D<byte> topLodTexture = new Array3D<byte>(4, packx * paddedTopLodCellSize, packy * paddedTopLodCellSize, packz * paddedTopLodCellSize);
+            Vector3 boxStep = (upperBound - lowerBound) / new Vector3(cellsx, cellsy, cellsz);
 
             int brickId = 0;
-
-#if LOD0_8BIT
-            float packLodCoef = lod0pixels;
-            Array3D<byte> zeroLodData = new Array3D<byte>(4, cellsx, cellsy, cellsz);
-#else
-            zeroLodData = new Array3D<ushort>(4, cellsx, cellsy, cellsz);
-#endif
-            Vector3 boxStep = (upperBound - lowerBound) / new Vector3(cellsx, cellsy, cellsz);
 
             int pxy = packx * packy;
             for (int iz = 0; iz < cellsz; iz++)
@@ -138,41 +118,34 @@ namespace SDFTool
                             if (atlasX >= 256 || atlasY >= 256 || atlasZ >= 256)
                                 throw new Exception("Too big atlas index for partial LOD: " + brickId + "!");
 
-                            float[] distanceBlock = new float[blockSize * blockSize * blockSize];
+                            Vector3i blockStart = new Vector3i(atlasX * paddedTopLodCellSize, atlasY * paddedTopLodCellSize, atlasZ * paddedTopLodCellSize);
+
+                            float[] distanceBlock = new float[paddedTopLodCellSize * paddedTopLodCellSize * paddedTopLodCellSize];
 
                             Vector3i dataStart = new Vector3i(ix * topLodCellSize, iy * topLodCellSize, iz * topLodCellSize);
 
-                            for (int z = 0; z < blockSize; z++)
-                                for (int y = 0; y < blockSize; y++)
-                                    for (int x = 0; x < blockSize; x++)
+                            for (int z = 0; z < paddedTopLodCellSize; z++)
+                                for (int y = 0; y < paddedTopLodCellSize; y++)
+                                    for (int x = 0; x < paddedTopLodCellSize; x++)
                                     {
-                                        PixelData pixel = GetArrayData(data, dataSize, dataStart + new Vector3i(x, y, z));
-                                        int blockIndex = x + y * blockSize + z * blockSize * blockSize;
+                                        Vector3i coord = new Vector3i(x, y, z);
 
-                                        distanceBlock[blockIndex] = pixel.DistanceUV.X;
+                                        PixelData pixel = GetArrayData(data, dataSize, dataStart + coord);
+#if USE_LODS
+                                        // block for lower LOD calculation
+                                        SetArrayData(distanceBlock, pixel.DistanceUV.X, blockSize, coord);
+#endif
+                                        // higher LOD
+                                        SetArrayData(distanceLods[0], pixel.DistanceUV.X, topLodTextureSize, blockStart + coord);
 
-                                        topLoduv[atlasX * paddedTopLodCellSize + x, atlasY * paddedTopLodCellSize + y, atlasZ * paddedTopLodCellSize + z, 0] = Helper.PackFloatToUShort(pixel.DistanceUV.Y);
-                                        topLoduv[atlasX * paddedTopLodCellSize + x, atlasY * paddedTopLodCellSize + y, atlasZ * paddedTopLodCellSize + z, 1] = Helper.PackFloatToUShort(pixel.DistanceUV.Z);
+                                        // texture UV coords
+                                        SetArrayData(topLoduv, new Vector2(pixel.DistanceUV.Y, pixel.DistanceUV.Z), topLodTextureSize, blockStart + coord);
                                     }
 
-                            float[] distancePercentageArr = GetTrilinear(distanceBlock, blockSize, 1, topLodCellSize / 2.0f, topLodCellSize / 2.0f, topLodCellSize / 2.0f);
+                            float[] distancePercentageArr = GetTrilinear(distanceBlock, paddedTopLodCellSize, 1, topLodCellSize / 2.0f, topLodCellSize / 2.0f, topLodCellSize / 2.0f);
 
                             distancePercentage = distancePercentageArr[0]; // central point
 
-
-#if LOD0_8BIT
-                            byte distByte = PackFloatToSByte(cell.Item2);
-                            float dist = (distByte / 255.0f) * 2.0f - 1.0f;
-#else
-                            float dist = 0;// cell.Item2;
-#endif
-#if LOD2_8BIT
-                            topLodDistance.PutBlock(distanceBlock, atlasX * paddedTopLodCellSize, atlasY * paddedTopLodCellSize, atlasZ * paddedTopLodCellSize, (k) => PackFloatToSByte((k - dist) * packLodCoef));
-                            //topLodDistance.PutBlock(distanceBlock, atlasX * paddedTopLodCellSize, atlasY * paddedTopLodCellSize, atlasZ * paddedTopLodCellSize, (k) => PackFloatToSByte(k * (maximumDistance / step) / topLodCellSize));
-#else
-                            //dist = 0;
-                            topLodDistance.PutBlock(distanceBlock, blockSize, blockSize, blockSize, 1, atlasX * paddedTopLodCellSize, atlasY * paddedTopLodCellSize, atlasZ * paddedTopLodCellSize, (k, l) => Helper.PackFloatToUShort(k - dist));
-#endif
 
 #if USE_LODS
                             int lodSize = paddedTopLodCellSize;
@@ -190,36 +163,27 @@ namespace SDFTool
 #endif
 
                             Vector3 boxStart = lowerBound + new Vector3(ix, iy, iz) * boxStep;
-                            Matrix4x4 boxTextureMatrix = Matrix4x4.Identity;
 
-                            ValueTuple<int, float>[][] boxBones = GetBoxWeights(weightCache, data, dataSize, dataStart, blockSize, ix, iy, iz);//, topLodCellSize * 0.25f);
+                            ValueTuple<int, float>[][] boxBones = GetBoxWeights(weightCache, data, dataSize, dataStart, topLodCellSize, ix, iy, iz);//, topLodCellSize * 0.25f);
 
                             Vector3 boxCenter = boxStart + boxStep / 2;
 
                             Matrix4x4 boxMatrix = Matrix4x4.CreateScale(boxStep) * Matrix4x4.CreateTranslation(boxStart);
 
-                            boxes.Add(new MeshGenerator.Shape(
-                                boxMatrix,
-                                boxTextureMatrix,
-                                MeshGenerator.ShapeType.Cube,
-                                MeshGenerator.ShapeFlags.NoNormals,
-                                new float[] {
-                                    brickId
-                                }, boxBones));
+                            boxes.Add(new ValueTuple<Matrix4x4, int, ValueTuple<int, float>[][]>(boxMatrix, brickId, boxBones));
+
+                            //boxes.Add(new MeshGenerator.Shape(
+                            //    boxMatrix,
+                            //    boxTextureMatrix,
+                            //    MeshGenerator.ShapeType.Cube,
+                            //    MeshGenerator.ShapeFlags.NoNormals,
+                            //    new float[] {
+                            //        brickId
+                            //    }, boxBones));
                         }
 
-#if LOD0_8BIT
-                        zeroLodData[ix, iy, iz, 0] = PackFloatToSByte(distancePercentage);
 
-                        zeroLodData[ix, iy, iz, 1] = (byte)(atlasX);
-                        zeroLodData[ix, iy, iz, 2] = (byte)(atlasY);
-                        zeroLodData[ix, iy, iz, 3] = (byte)(atlasZ);
-#else
-                        zeroLodData[ix, iy, iz, 0] = (new HalfFloat(distancePercentage)).Data;
-                        zeroLodData[ix, iy, iz, 1] = (new HalfFloat(atlasX)).Data;
-                        zeroLodData[ix, iy, iz, 2] = (new HalfFloat(atlasY)).Data;
-                        zeroLodData[ix, iy, iz, 3] = (new HalfFloat(atlasZ)).Data;
-#endif
+                        SetArrayData(zeroLodData, new Vector4(distancePercentage, atlasX, atlasY, atlasZ), new Vector3i(cellsx, cellsy, cellsz), new Vector3i(ix, iy, iz));
                     }
 
             boxArray = boxes.ToArray();
@@ -510,10 +474,75 @@ namespace SDFTool
 
         #endregion
 
-        private static T GetArrayData<T>(T[] data, Vector3i dataSize, Vector3i coord)
+#region Utils
+
+        private static T GetArrayData<T>(T[] array, Vector3i dataSize, Vector3i coord)
         {
-            return data[coord.X + coord.Y * dataSize.X + coord.Z * dataSize.X * dataSize.Y];
+            return array[coord.X + coord.Y * dataSize.X + coord.Z * dataSize.X * dataSize.Y];
         }
+
+        private static void SetArrayData<T>(T[] array, T data, Vector3i dataSize, Vector3i coord)
+        {
+            array[coord.X + coord.Y * dataSize.X + coord.Z * dataSize.X * dataSize.Y] = data;
+        }
+
+
+        /// <summary>
+        /// Tries to find a best way to divide value by three numbers
+        /// </summary>
+        /// <param name="value"></param>
+        /// <param name="x"></param>
+        /// <param name="y"></param>
+        /// <param name="z"></param>
+        /// <param name="max"></param>
+        public static void FindBestDividers(int value, out int x, out int y, out int z, int max)
+        {
+            int root = (int)Math.Ceiling(Math.Pow(value, 1 / 3.0));
+
+            x = root; y = root; z = root;
+            int closest = x * y * z;
+
+            for (int nz = 1; nz <= root * 4; nz++)
+            {
+                int lz = root + nz / 2 * Math.Sign(nz % 2 - 0.5f);
+                if (lz > max || lz <= 0)
+                    continue;
+
+                for (int ny = 1; ny <= root * 4; ny++)
+                {
+                    int ly = root + ny / 2 * Math.Sign(ny % 2 - 0.5f);
+                    if (ly > max || ly <= 0)
+                        continue;
+
+                    for (int nx = 1; nx <= root * 4; nx++)
+                    {
+                        int lx = root + nx / 2 * Math.Sign(nx % 2 - 0.5f);
+
+                        if (lx > max || lx <= 0)
+                            continue;
+
+                        int nvalue = lx * ly * lz;
+
+                        if (nvalue < value)
+                            continue;
+
+                        if (nvalue < closest)
+                        {
+                            x = lx;
+                            y = ly;
+                            z = lz;
+
+                            closest = nvalue;
+
+                            if (nvalue == value)
+                                return;
+                        }
+                    }
+                }
+            }
+        }
+
+#endregion
     }
 }
 

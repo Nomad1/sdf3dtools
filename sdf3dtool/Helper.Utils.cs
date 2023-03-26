@@ -86,60 +86,6 @@ namespace SDFTool
 #endif
         }
 
-        /// <summary>
-        /// Tries to find a best way to divide value by three numbers
-        /// </summary>
-        /// <param name="value"></param>
-        /// <param name="x"></param>
-        /// <param name="y"></param>
-        /// <param name="z"></param>
-        /// <param name="max"></param>
-        public static void FindBestDividers(int value, out int x, out int y, out int z, int max)
-        {
-            int root = (int)Math.Ceiling(Math.Pow(value, 1 / 3.0));
-
-            x = root; y = root; z = root;
-            int closest = x * y * z;
-
-            for (int nz = 1; nz <= root * 4; nz++)
-            {
-                int lz = root + nz / 2 * Math.Sign(nz % 2 - 0.5f);
-                if (lz > max || lz <= 0)
-                    continue;
-
-                for (int ny = 1; ny <= root * 4; ny++)
-                {
-                    int ly = root + ny / 2 * Math.Sign(ny % 2 - 0.5f);
-                    if (ly > max || ly <= 0)
-                        continue;
-
-                    for (int nx = 1; nx <= root * 4; nx++)
-                    {
-                        int lx = root + nx / 2 * Math.Sign(nx % 2 - 0.5f);
-
-                        if (lx > max || lx <= 0)
-                            continue;
-
-                        int nvalue = lx * ly * lz;
-
-                        if (nvalue < value)
-                            continue;
-
-                        if (nvalue < closest)
-                        {
-                            x = lx;
-                            y = ly;
-                            z = lz;
-
-                            closest = nvalue;
-
-                            if (nvalue == value)
-                                return;
-                        }
-                    }
-                }
-            }
-        }
 
         /// <summary>
         /// Tries to find a best way to divide value by two numbers

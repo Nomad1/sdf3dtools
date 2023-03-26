@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace SDFTool
+namespace RunServer.SdfTool
 {
     public struct Vector4i : IComparable<Vector4i>
     {

@@ -8,7 +8,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using Assimp;
 using RunMobile.Utility;
-
+using RunServer.SdfTool;
 using Vector = System.Numerics.Vector3;
 using Vector4 = System.Numerics.Vector4;
 
@@ -325,7 +325,7 @@ namespace SDFTool
                 lod /= 2;
             }
 #else
-            int nlods = 1;
+            int numberOfLods = 1;
 #endif
 
 
@@ -414,13 +414,54 @@ namespace SDFTool
 
             Console.WriteLine("[{0}] SDF data ready", sw.Elapsed);
 
-            Array3D<ushort>[] lods;
-            Array3D<ushort> uv, zeroLod;
-            MeshGenerator.Shape [] boxes;
+            ValueTuple<System.Numerics.Matrix4x4, int, ValueTuple<int, float>[][]> [] nboxes;
+            float[][] alods;
+            System.Numerics.Vector2[] nuv;
+            Vector4[] nzeroLod;
+            Vector3i topLodTextureSize;
 
             // find non-empty cells
-            int usedCells = CellProcessor.ProcessCells(data, dataSize, topLodCellSize, paddedTopLodCellSize, lowerBound, upperBound, nlods,
-                out lods, out uv, out zeroLod, out boxes);
+            int usedCells = CellProcessor.ProcessCells(data, dataSize, topLodCellSize, paddedTopLodCellSize, lowerBound, upperBound, numberOfLods,
+                out topLodTextureSize,
+                out alods, out nuv, out nzeroLod, out nboxes);
+
+            Array3D<ushort>[] lods = new Array3D<ushort>[alods.Length];
+            for (int i = 0; i < alods.Length; i++)
+            {
+                lods[i] = new Array3D<ushort>(1, topLodTextureSize.X, topLodTextureSize.Y, topLodTextureSize.Z);
+                for (int j = 0; j < alods[i].Length; j++)
+                    lods[i][j] = Helper.PackFloatToUShort(alods[i][j]);
+
+                break; // only top lod is supported for now
+            }
+
+            Array3D<ushort> uv = new Array3D<ushort>(2, topLodTextureSize.X, topLodTextureSize.Y, topLodTextureSize.Z);
+            for (int j = 0; j < nuv.Length; j++)
+            {
+                uv[j * 2 + 0] = Helper.PackFloatToUShort(nuv[j].X);
+                uv[j * 2 + 1] = Helper.PackFloatToUShort(nuv[j].Y);
+            }
+
+            Array3D<ushort> zeroLod = new Array3D<ushort>(4, dataSize.X / topLodCellSize, dataSize.Y / topLodCellSize, dataSize.Z / topLodCellSize);
+            for (int j = 0; j < nzeroLod.Length; j++)
+            {
+                zeroLod[j * 2 + 0] = Helper.PackFloatToUShort(nzeroLod[j].X);
+                zeroLod[j * 2 + 1] = Helper.PackFloatToUShort(nzeroLod[j].Y);
+                zeroLod[j * 2 + 2] = Helper.PackFloatToUShort(nzeroLod[j].Z);
+                zeroLod[j * 2 + 3] = Helper.PackFloatToUShort(nzeroLod[j].W);
+            }
+
+
+            MeshGenerator.Shape[] boxes = new MeshGenerator.Shape[nboxes.Length];
+
+            for (int i = 0; i < boxes.Length; i++)
+                boxes[i] = new MeshGenerator.Shape(nboxes[i].Item1,System.Numerics.Matrix4x4.Identity,
+                    MeshGenerator.ShapeType.Cube,
+                    MeshGenerator.ShapeFlags.NoNormals,
+                    new float[] {
+                        nboxes[i].Item2
+                    }, nboxes[i].Item3);
+
 
             //Console.WriteLine("[{0}] Got {1} empty cells, cell grid size {2}, {3:P}, total {4} of {5}x{5}x{5} cells, size {6} vs {7}, grid {8}x{9}x{10}",
             //sw.Elapsed, totalCells - usedCells, new Vector3i(cellsx, cellsy, cellsz), usedCells / (float)totalCells,
