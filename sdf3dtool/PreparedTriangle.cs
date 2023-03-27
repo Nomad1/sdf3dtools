@@ -185,7 +185,7 @@ namespace SDFTool
             Vector3 pa = p - A;
             float u = Vector3.Dot(pa, h) * proj;
 
-            if (u < 0.0 || u > 1.0)
+            if (u < 0.0f || u > 1.0f)
             {
                 return false;
             }

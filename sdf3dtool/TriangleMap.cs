@@ -328,46 +328,7 @@ namespace SDFTool
                 return 0;
 
             Vector3 localEndPoint = localPoint + dir * boundExit;
-            /*localPoint + new Vector3(Math.Sign(dir.X) * m_gridx, Math.Sign(dir.Y) * m_gridy, Math.Sign(dir.Z) * m_gridz); // invalid!
-
-            int fromx = Math.Max((int)Math.Floor(Math.Min(localPoint.X, localEndPoint.X)), 0);
-            int fromy = Math.Max((int)Math.Floor(Math.Min(localPoint.Y, localEndPoint.Y)), 0);
-            int fromz = Math.Max((int)Math.Floor(Math.Min(localPoint.Z, localEndPoint.Z)), 0);
-            int tox = Math.Min((int)Math.Floor(Math.Max(localPoint.X, localEndPoint.X)), m_gridx - 1);
-            int toy = Math.Min((int)Math.Floor(Math.Max(localPoint.Y, localEndPoint.Y)), m_gridy - 1);
-            int toz = Math.Min((int)Math.Floor(Math.Max(localPoint.Z, localEndPoint.Z)), m_gridz - 1);
-
-            // TODO: 3dda for selecting needed grids, not a bruteforce
-
-            HashSet<PreparedTriangle> triangles = new HashSet<PreparedTriangle>();
-
-            for (int z = fromz; z <= toz; z++)
-                for (int y = fromy; y <= toy; y++)
-                    for (int x = fromx; x <= tox; x++)
-                    {
-                        int index = x + y * m_gridx + z * m_gridx * m_gridy;
-
-                        // empty cells
-                        if (m_triangles[index] == null)
-                            continue;
-
-                        if (!iRayBoundIntersection(new Vector3(x, y, z), new Vector3(x + 1, y + 1, z + 1), localPoint, idir))
-                            continue;
-
-                        foreach (var triangle in m_triangles[index])
-                            if (!triangles.Contains(triangle))
-                            {
-                                triangles.Add(triangle);
-
-                                if (!iRayBoundIntersection(triangle.LowerBound, triangle.UpperBound, point, idir))
-                                    continue;
-
-                                if (triangle.IntersectsRay(point, dir))
-                                    count++;
-                            }
-                    }
-
-            return count;*/
+           
             HashSet<PreparedTriangle> triangles = new HashSet<PreparedTriangle>();
 
             ProcessRay(localPoint, localEndPoint, delegate (int index)
@@ -574,61 +535,6 @@ namespace SDFTool
             if (tmax < length)
                 resultExit = tmax;
             return true;
-        }
-
-
-        public bool InsideCheck(Vector3 point, Vector3 dir)
-        {
-            int count = 0;
-            int countBack = 0;
-
-            if (float.IsNaN(dir.X) || float.IsNaN(dir.Y) || float.IsNaN(dir.Z))
-                dir = new Vector3(0, 0, 1);
-
-            Vector3 idir = new Vector3(1.0f / dir.X, 1.0f / dir.Y, 1.0f / dir.Z);
-            Vector3 localPoint = (point - m_sceneMin) / m_gridStep;
-            Vector3 localEndPoint = localPoint + new Vector3(Math.Sign(dir.X) * m_gridx, Math.Sign(dir.Y) * m_gridy, Math.Sign(dir.Z) * m_gridz);
-
-            int fromx = Math.Max((int)Math.Floor(Math.Min(localPoint.X, localEndPoint.X)), 0);
-            int fromy = Math.Max((int)Math.Floor(Math.Min(localPoint.Y, localEndPoint.Y)), 0);
-            int fromz = Math.Max((int)Math.Floor(Math.Min(localPoint.Z, localEndPoint.Z)), 0);
-            int tox = Math.Min((int)Math.Ceiling(Math.Max(localPoint.X, localEndPoint.X)), m_gridx);
-            int toy = Math.Min((int)Math.Ceiling(Math.Max(localPoint.Y, localEndPoint.Y)), m_gridy);
-            int toz = Math.Min((int)Math.Ceiling(Math.Max(localPoint.Z, localEndPoint.Z)), m_gridz);
-
-            // TODO: 3dda for selecting needed grids, not a bruteforce
-
-            HashSet<PreparedTriangle> triangles = new HashSet<PreparedTriangle>();
-
-            for (int z = fromz; z < toz; z++)
-                for (int y = fromy; y < toy; y++)
-                    for (int x = fromx; x < tox; x++)
-                    {
-                        int index = x + y * m_gridx + z * m_gridx * m_gridy;
-
-                        // empty cells
-                        if (m_triangles[index] == null)
-                            continue;
-
-                        if (!iRayBoundIntersection(new Vector3(x, y, z), new Vector3(x + 1, y + 1, z + 1), localPoint, idir))
-                            continue;
-
-                        foreach (var triangle in m_triangles[index])
-                            if (!triangles.Contains(triangle))
-                            {
-                                triangles.Add(triangle);
-
-                                if (triangle.IntersectsRay(point, dir))
-                                {
-                                    if (Vector3.Dot(triangle.N, point) < 0)
-                                        countBack++;
-                                    else
-                                        count++;
-                                }
-                            }
-                    }
-
-            return countBack < count;
         }
 
         /// <summary>

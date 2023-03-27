@@ -1,7 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
+
+#if UNITY_EDITOR
+using Vector2 = RunServer.SdfTool.Vector2e;
+using Vector3 = RunServer.SdfTool.Vector3e;
+using Vector4 = RunServer.SdfTool.Vector4e;
+#else
 using System.Numerics;
 using RunMobile.Utility;
+#endif
 
 namespace RunServer.SdfTool
 {
@@ -44,9 +51,9 @@ namespace RunServer.SdfTool
             int nlods,
             out Vector3i topLodTextureSize,
             out float[][] distanceLods, out Vector2[] topLoduv, out Vector4[] zeroLodData,
-            out ValueTuple<Matrix4x4, int, ValueTuple<int, float>[][]>[] boxArray)
+            out ValueTuple<Vector3, Vector3, int, ValueTuple<int, float>[][]>[] boxArray)
         {
-            List<ValueTuple<Matrix4x4, int, ValueTuple<int, float>[][]>> boxes = new List<ValueTuple<Matrix4x4, int, ValueTuple<int, float>[][]>>();
+            List<ValueTuple<Vector3, Vector3, int, ValueTuple<int, float>[][]>> boxes = new List<ValueTuple<Vector3, Vector3, int, ValueTuple<int, float>[][]>>();
             Dictionary<Vector3i, ValueTuple<int, float>[]> weightCache = new Dictionary<Vector3i, ValueTuple<int, float>[]>();
 
             int usedCells = 0;
@@ -61,6 +68,9 @@ namespace RunServer.SdfTool
 
             float[] cells = new float[totalCells];
             usedCells = CheckCells(data, dataSize, cellsx, cellsy, cellsz, topLodCellSize, paddedTopLodCellSize, cells);
+
+            DebugLog("Used cells: {0}, cellsx: {1}, cellsy: {2}, cellsz: {3}, blockSize: {4}", usedCells, cellsx, cellsy, cellsz, paddedTopLodCellSize);
+
 
             int packx;
             int packy;
@@ -162,24 +172,13 @@ namespace RunServer.SdfTool
                             }
 #endif
 
-                            Vector3 boxStart = lowerBound + new Vector3(ix, iy, iz) * boxStep;
+                            Vector3 boxStart = lowerBound + boxStep * new Vector3(ix, iy, iz);
 
                             ValueTuple<int, float>[][] boxBones = GetBoxWeights(weightCache, data, dataSize, dataStart, topLodCellSize, ix, iy, iz);//, topLodCellSize * 0.25f);
 
-                            Vector3 boxCenter = boxStart + boxStep / 2;
+                            Vector3 boxCenter = boxStart + boxStep * 0.5f;
 
-                            Matrix4x4 boxMatrix = Matrix4x4.CreateScale(boxStep) * Matrix4x4.CreateTranslation(boxStart);
-
-                            boxes.Add(new ValueTuple<Matrix4x4, int, ValueTuple<int, float>[][]>(boxMatrix, brickId, boxBones));
-
-                            //boxes.Add(new MeshGenerator.Shape(
-                            //    boxMatrix,
-                            //    boxTextureMatrix,
-                            //    MeshGenerator.ShapeType.Cube,
-                            //    MeshGenerator.ShapeFlags.NoNormals,
-                            //    new float[] {
-                            //        brickId
-                            //    }, boxBones));
+                            boxes.Add(new ValueTuple<Vector3, Vector3, int, ValueTuple<int, float>[][]>(boxStep, boxStart, brickId, boxBones));
                         }
 
 
@@ -474,7 +473,7 @@ namespace RunServer.SdfTool
 
         #endregion
 
-#region Utils
+        #region Utils
 
         private static T GetArrayData<T>(T[] array, Vector3i dataSize, Vector3i coord)
         {
@@ -542,7 +541,16 @@ namespace RunServer.SdfTool
             }
         }
 
-#endregion
+        #endregion
+
+        private static void DebugLog(string format, params object[] parameters)
+        {
+#if UNITY_EDITOR
+        UnityEngine.Debug.Log(string.Format(format, parameters));
+#else
+            Console.WriteLine(format, parameters);
+#endif
+        }
     }
 }
 

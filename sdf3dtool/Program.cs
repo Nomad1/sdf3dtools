@@ -367,10 +367,6 @@ namespace SDFTool
             // multiply by this value to convert pixels to scene units
             float pixelsToScene = 1.0f / sceneToPixels;
 
-            // divide by this value to convert scene units to 0..1
-            float sceneToRelative = maxSide;
-
-
             // exact number of pixels 
 
             int sx = (int)Math.Ceiling((sceneMax.X - sceneMin.X) * sceneToPixels) + topLodCellSize * 2;
@@ -396,7 +392,7 @@ namespace SDFTool
             Vector lowerBound = sceneMin - new Vector(padding);
             Vector upperBound = sceneMax + new Vector(padding);
 
-            Console.WriteLine("[{0}] File preprocessed. X: {1}, Y: {2}, Z: {3}, maximum distance: {4}", sw.Elapsed, sx, sy, sz, sceneToRelative);
+            Console.WriteLine("[{0}] File preprocessed. X: {1}, Y: {2}, Z: {3}, maximum distance: {4}", sw.Elapsed, sx, sy, sz, maxSide);
 
             int maxcount = sz * sy * sx;
 
@@ -414,7 +410,7 @@ namespace SDFTool
 
             Console.WriteLine("[{0}] SDF data ready", sw.Elapsed);
 
-            ValueTuple<System.Numerics.Matrix4x4, int, ValueTuple<int, float>[][]> [] nboxes;
+            ValueTuple<Vector, Vector, int, ValueTuple<int, float>[][]> [] nboxes;
             float[][] alods;
             System.Numerics.Vector2[] nuv;
             Vector4[] nzeroLod;
@@ -455,12 +451,14 @@ namespace SDFTool
             MeshGenerator.Shape[] boxes = new MeshGenerator.Shape[nboxes.Length];
 
             for (int i = 0; i < boxes.Length; i++)
-                boxes[i] = new MeshGenerator.Shape(nboxes[i].Item1,System.Numerics.Matrix4x4.Identity,
+                boxes[i] = new MeshGenerator.Shape(
+                    System.Numerics.Matrix4x4.CreateScale(nboxes[i].Item1) * System.Numerics.Matrix4x4.CreateTranslation(nboxes[i].Item2),
+                    System.Numerics.Matrix4x4.Identity,
                     MeshGenerator.ShapeType.Cube,
                     MeshGenerator.ShapeFlags.NoNormals,
                     new float[] {
-                        nboxes[i].Item2
-                    }, nboxes[i].Item3);
+                        nboxes[i].Item3
+                    }, nboxes[i].Item4);
 
 
             //Console.WriteLine("[{0}] Got {1} empty cells, cell grid size {2}, {3:P}, total {4} of {5}x{5}x{5} cells, size {6} vs {7}, grid {8}x{9}x{10}",
