@@ -40,7 +40,6 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
-    <Compile Include="HalfFloat.cs" />
     <Compile Include="PreparedTriangle.cs" />
     <Compile Include="TriangleMap.cs" />
     <Compile Include="MeshGenerator.cs" />
@@ -51,12 +50,17 @@
     <Compile Include="Helper.Assimp.cs" />
     <Compile Include="Helper.Umesh.cs" />
     <Compile Include="Helper.Utils.cs" />
-    <Compile Include="CellProcessor.cs" />
-    <Compile Include="Vector4i.cs" />
-    <Compile Include="Vector3i.cs" />
+    <Compile Include="SdfTool\CellProcessor.cs" />
+    <Compile Include="SdfTool\Vector3i.cs" />
+    <Compile Include="SdfTool\Vector4i.cs" />
+    <Compile Include="SdfTool\Vector2e.cs" />
+    <Compile Include="SdfTool\Vector3e.cs" />
+    <Compile Include="SdfTool\Vector4e.cs" />
+    <Compile Include="SdfTool\HalfFloat.cs" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Properties\" />
+    <Folder Include="SdfTool\" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\..\Projects.3rd\assimpnet\AssimpNet\AssimpNet.csproj">

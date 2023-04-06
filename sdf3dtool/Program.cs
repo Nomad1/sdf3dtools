@@ -5,12 +5,12 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Runtime.InteropServices;
 using Assimp;
-using RunMobile.Utility;
 using RunServer.SdfTool;
+
 using Vector = System.Numerics.Vector3;
 using Vector4 = System.Numerics.Vector4;
+using Matrix4x4 = Assimp.Matrix4x4;
 
 namespace SDFTool
 {
@@ -410,16 +410,16 @@ namespace SDFTool
 
             Console.WriteLine("[{0}] SDF data ready", sw.Elapsed);
 
-            ValueTuple<Vector, Vector, int, ValueTuple<int, float>[][]> [] nboxes;
+            List<CellProcessor.BrickData> bricks = new List<CellProcessor.BrickData>();
             float[][] alods;
             System.Numerics.Vector2[] nuv;
             Vector4[] nzeroLod;
             Vector3i topLodTextureSize;
 
             // find non-empty cells
-            int usedCells = CellProcessor.ProcessCells(data, dataSize, topLodCellSize, paddedTopLodCellSize, lowerBound, upperBound, numberOfLods,
+            int usedCells = CellProcessor.ProcessCells(data, dataSize, topLodCellSize, lowerBound, upperBound, numberOfLods,
                 out topLodTextureSize,
-                out alods, out nuv, out nzeroLod, out nboxes);
+                out alods, out nuv, out nzeroLod, bricks);
 
             Array3D<ushort>[] lods = new Array3D<ushort>[alods.Length];
             for (int i = 0; i < alods.Length; i++)
@@ -448,17 +448,17 @@ namespace SDFTool
             }
 
 
-            MeshGenerator.Shape[] boxes = new MeshGenerator.Shape[nboxes.Length];
+            MeshGenerator.Shape[] boxes = new MeshGenerator.Shape[bricks.Count];
 
             for (int i = 0; i < boxes.Length; i++)
                 boxes[i] = new MeshGenerator.Shape(
-                    System.Numerics.Matrix4x4.CreateScale(nboxes[i].Item1) * System.Numerics.Matrix4x4.CreateTranslation(nboxes[i].Item2),
+                    System.Numerics.Matrix4x4.CreateScale(bricks[i].Size) * System.Numerics.Matrix4x4.CreateTranslation(bricks[i].Position),
                     System.Numerics.Matrix4x4.Identity,
                     MeshGenerator.ShapeType.Cube,
                     MeshGenerator.ShapeFlags.NoNormals,
                     new float[] {
-                        nboxes[i].Item3
-                    }, nboxes[i].Item4);
+                        bricks[i].BrickId
+                    }, bricks[i].BoneWeights);
 
 
             //Console.WriteLine("[{0}] Got {1} empty cells, cell grid size {2}, {3:P}, total {4} of {5}x{5}x{5} cells, size {6} vs {7}, grid {8}x{9}x{10}",

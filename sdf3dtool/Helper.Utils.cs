@@ -1,6 +1,5 @@
 ﻿using System;
-using RunMobile.Utility;
-using System.Threading.Tasks;
+using RunServer.SdfTool;
 
 namespace SDFTool
 {
@@ -37,7 +36,7 @@ namespace SDFTool
 
             cpus /= 2;
 #if !CUSTOM_FOR
-            Parallel.For(from, to, new ParallelOptions { MaxDegreeOfParallelism = cpus }, action);
+             System.Threading.Tasks.Parallel.For(from, to, new  System.Threading.Tasks.ParallelOptions { MaxDegreeOfParallelism = cpus }, action);
 #else
             if (cpus <= 1 || from >= to)
             {

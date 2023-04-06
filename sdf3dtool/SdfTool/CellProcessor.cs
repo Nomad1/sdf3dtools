@@ -7,7 +7,6 @@ using Vector3 = RunServer.SdfTool.Vector3e;
 using Vector4 = RunServer.SdfTool.Vector4e;
 #else
 using System.Numerics;
-using RunMobile.Utility;
 #endif
 
 namespace RunServer.SdfTool
@@ -28,13 +27,28 @@ namespace RunServer.SdfTool
 
     public static class CellProcessor
     {
+        public struct BrickData
+        {
+            public readonly Vector3 Position;
+            public readonly Vector3 Size;
+            public readonly int BrickId;
+            public readonly ValueTuple<int, float>[][] BoneWeights;
+
+            public BrickData(int id, Vector3 position, Vector3 size, ValueTuple<int, float>[][] weights)
+            {
+                Position = position;
+                BrickId = id;
+                Size = size;
+                BoneWeights = weights;
+            }
+        }
+
         /// <summary>
         /// Splits SDF pixel data to bricks
         /// </summary>
         /// <param name="data">input data</param>
         /// <param name="dataSize">data size</param>
         /// <param name="topLodCellSize"></param>
-        /// <param name="paddedTopLodCellSize"></param>
         /// <param name="lowerBound"></param>
         /// <param name="upperBound"></param>
         /// <param name="nlods"></param>
@@ -46,14 +60,16 @@ namespace RunServer.SdfTool
         public static int ProcessCells(
             PixelData[] data, Vector3i dataSize,
 
-            int topLodCellSize, int paddedTopLodCellSize,
+            int topLodCellSize,
             Vector3 lowerBound, Vector3 upperBound,
             int nlods,
+
             out Vector3i topLodTextureSize,
-            out float[][] distanceLods, out Vector2[] topLoduv, out Vector4[] zeroLodData,
-            out ValueTuple<Vector3, Vector3, int, ValueTuple<int, float>[][]>[] boxArray)
+            out float[][] distanceLods,
+            out Vector2[] topLoduv,
+            out Vector4[] zeroLodData,
+            IList<BrickData> boxes)
         {
-            List<ValueTuple<Vector3, Vector3, int, ValueTuple<int, float>[][]>> boxes = new List<ValueTuple<Vector3, Vector3, int, ValueTuple<int, float>[][]>>();
             Dictionary<Vector3i, ValueTuple<int, float>[]> weightCache = new Dictionary<Vector3i, ValueTuple<int, float>[]>();
 
             int usedCells = 0;
@@ -61,6 +77,8 @@ namespace RunServer.SdfTool
             int cellsx = dataSize.X / topLodCellSize;
             int cellsy = dataSize.Y / topLodCellSize;
             int cellsz = dataSize.Z / topLodCellSize;
+
+            int paddedTopLodCellSize = topLodCellSize + 1;
 
             int totalCells = cellsx * cellsy * cellsz;
 
@@ -152,7 +170,7 @@ namespace RunServer.SdfTool
                                         SetArrayData(topLoduv, new Vector2(pixel.DistanceUV.Y, pixel.DistanceUV.Z), topLodTextureSize, blockStart + coord);
                                     }
 
-                            float[] distancePercentageArr = GetTrilinear(distanceBlock, paddedTopLodCellSize, 1, topLodCellSize / 2.0f, topLodCellSize / 2.0f, topLodCellSize / 2.0f);
+                            float[] distancePercentageArr = GetTrilinear(distanceBlock, paddedTopLodCellSize, 1, new Vector3(topLodCellSize / 2.0f));
 
                             distancePercentage = distancePercentageArr[0]; // central point
 
@@ -172,20 +190,14 @@ namespace RunServer.SdfTool
                             }
 #endif
 
-                            Vector3 boxStart = lowerBound + boxStep * new Vector3(ix, iy, iz);
+                            ValueTuple<int, float>[][] boxBones = GetBoxWeights(weightCache, data, dataSize, dataStart, topLodCellSize, ix, iy, iz);
 
-                            ValueTuple<int, float>[][] boxBones = GetBoxWeights(weightCache, data, dataSize, dataStart, topLodCellSize, ix, iy, iz);//, topLodCellSize * 0.25f);
-
-                            Vector3 boxCenter = boxStart + boxStep * 0.5f;
-
-                            boxes.Add(new ValueTuple<Vector3, Vector3, int, ValueTuple<int, float>[][]>(boxStep, boxStart, brickId, boxBones));
+                            boxes.Add(new BrickData(brickId, lowerBound + boxStep * new Vector3(ix, iy, iz), boxStep, boxBones));
                         }
 
 
                         SetArrayData(zeroLodData, new Vector4(distancePercentage, atlasX, atlasY, atlasZ), new Vector3i(cellsx, cellsy, cellsz), new Vector3i(ix, iy, iz));
                     }
-
-            boxArray = boxes.ToArray();
 
             return usedCells;
         }
@@ -366,10 +378,6 @@ namespace RunServer.SdfTool
                             // add old data with the same weight as current
                             oldValue.Item1 = oldValue.Item1 + pair.Item2;
                             oldValue.Item2 *= 2;
-
-                            // old data has 25% of weigth
-                            //oldValue.Item1 = oldValue.Item1 + pair.Item2 * 3;
-                            //oldValue.Item2 = oldValue.Item2 * 2 + oldValue.Item2 * 2;
                         }
 
                         weightValues[pair.Item1] = oldValue;
@@ -401,50 +409,60 @@ namespace RunServer.SdfTool
             return result;
         }
 
-        private static float[] GetTrilinear(float[] block, int blockSize, int components, float px, float py, float pz)
+        private static readonly Vector3i[] s_trilinearShifts =
         {
-            int ix = (int)px;
-            int iy = (int)py;
-            int iz = (int)pz;
-            float frx = px - ix;
-            float fry = py - iy;
-            float frz = pz - iz;
+            new Vector3i(0, 0, 0),
+            new Vector3i(1, 0, 0),
+            new Vector3i(0, 1, 0),
+            new Vector3i(1, 1, 0),
+            new Vector3i(0, 0, 1),
+            new Vector3i(1, 0, 1),
+            new Vector3i(0, 1, 1),
+            new Vector3i(1, 1, 1)
+        };
+
+        /// <summary>
+        /// Gets the value of pixel with trilinear interpolation 
+        /// </summary>
+        /// <param name="block"></param>
+        /// <param name="blockSize"></param>
+        /// <param name="stride"></param>
+        /// <param name="coord"></param>
+        /// <returns>array of size <paramref name="stride"/></returns>
+        private static float[] GetTrilinear(float[] block, int blockSize, int stride, Vector3 coord)
+        {
+            int ix = (int)coord.X;
+            int iy = (int)coord.Y;
+            int iz = (int)coord.Z;
+            float frx = coord.X - ix;
+            float fry = coord.Y - iy;
+            float frz = coord.Z - iz;
 
             float[] coef =
-                        {
-                            (1.0f - frx) * (1.0f - fry) * (1.0f - frz),
-                            (frx) * (1.0f - fry) * (1.0f - frz),
-                            (1.0f - frx) * (fry) * (1.0f - frz),
-                            (frx) * (fry) * (1.0f - frz),
-                            (1.0f - frx) * (1.0f - fry) * (frz),
-                            (frx) * (1.0f - fry) * (frz),
-                            (1.0f - frx) * (fry) * (frz),
-                            (frx) * (fry) * (frz)
-                        };
-
-            Vector3i[] shifts =
             {
-                            new Vector3i(0, 0, 0),
-                            new Vector3i(1, 0, 0),
-                            new Vector3i(0, 1, 0),
-                            new Vector3i(1, 1, 0),
-                            new Vector3i(0, 0, 1),
-                            new Vector3i(1, 0, 1),
-                            new Vector3i(0, 1, 1),
-                            new Vector3i(1, 1, 1)
-                        };
+                (1.0f - frx) * (1.0f - fry) * (1.0f - frz),
+                (frx) * (1.0f - fry) * (1.0f - frz),
+                (1.0f - frx) * (fry) * (1.0f - frz),
+                (frx) * (fry) * (1.0f - frz),
+                (1.0f - frx) * (1.0f - fry) * (frz),
+                (frx) * (1.0f - fry) * (frz),
+                (1.0f - frx) * (fry) * (frz),
+                (frx) * (fry) * (frz)
+            };
 
 
-            float[] result = new float[components];
+            Vector3i blockDimensions = new Vector3i(blockSize * stride, blockSize * stride, blockSize * stride);
+
+            float[] result = new float[stride];
             for (int i = 0; i < coef.Length; i++)
             {
-                Vector3i ip = new Vector3i(ix + shifts[i].X, iy + shifts[i].Y, iz + shifts[i].Z);
+                Vector3i ip = new Vector3i(ix + s_trilinearShifts[i].X, iy + s_trilinearShifts[i].Y, iz + s_trilinearShifts[i].Z);
 
                 if (ip.X >= blockSize || ip.Y >= blockSize || ip.Z >= blockSize)
                     continue;
 
-                for (int c = 0; c < components; c++)
-                    result[c] += coef[i] * GetArrayData(block, new Vector3i(blockSize, blockSize, blockSize), ip);
+                for (int c = 0; c < stride; c++)
+                    result[c] += coef[i] * GetArrayData(block, blockDimensions, ip, c);
             }
             return result;
         }
@@ -461,7 +479,7 @@ namespace RunServer.SdfTool
                 {
                     for (int nx = 0; nx < lodSize; nx++)
                     {
-                        float[] value = GetTrilinear(topLodDistance, blockSize, 1, nx * step, ny * step, nz * step);
+                        float[] value = GetTrilinear(topLodDistance, blockSize, 1, new Vector3(nx, ny, nz) * step);
 
                         result[nx + ny * lodSize + nz * lodSize * lodSize] = value[0];
                     }
@@ -475,14 +493,14 @@ namespace RunServer.SdfTool
 
         #region Utils
 
-        private static T GetArrayData<T>(T[] array, Vector3i dataSize, Vector3i coord)
+        private static T GetArrayData<T>(T[] array, Vector3i dataSize, Vector3i coord, int shift = 0)
         {
-            return array[coord.X + coord.Y * dataSize.X + coord.Z * dataSize.X * dataSize.Y];
+            return array[coord.X + coord.Y * dataSize.X + coord.Z * dataSize.X * dataSize.Y + shift];
         }
 
-        private static void SetArrayData<T>(T[] array, T data, Vector3i dataSize, Vector3i coord)
+        private static void SetArrayData<T>(T[] array, T data, Vector3i dataSize, Vector3i coord, int shift = 0)
         {
-            array[coord.X + coord.Y * dataSize.X + coord.Z * dataSize.X * dataSize.Y] = data;
+            array[coord.X + coord.Y * dataSize.X + coord.Z * dataSize.X * dataSize.Y + shift] = data;
         }
 
 
@@ -546,7 +564,7 @@ namespace RunServer.SdfTool
         private static void DebugLog(string format, params object[] parameters)
         {
 #if UNITY_EDITOR
-        UnityEngine.Debug.Log(string.Format(format, parameters));
+            UnityEngine.Debug.Log(string.Format(format, parameters));
 #else
             Console.WriteLine(format, parameters);
 #endif

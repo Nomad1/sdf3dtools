@@ -54,7 +54,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 using System;
 using System.Runtime.InteropServices;
 
-namespace RunMobile.Utility
+namespace RunServer.SdfTool
 {
 #if !USE_OPENTK_VERSION
     /// <summary>
