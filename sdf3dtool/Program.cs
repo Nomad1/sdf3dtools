@@ -410,6 +410,7 @@ namespace SDFTool
 
             Console.WriteLine("[{0}] SDF data ready", sw.Elapsed);
 
+#if OLD_MODE
             List<CellProcessor.BrickData> bricks = new List<CellProcessor.BrickData>();
             float[][] alods;
             System.Numerics.Vector2[] nuv;
@@ -446,6 +447,31 @@ namespace SDFTool
                 zeroLod[j * 2 + 2] = Helper.PackFloatToUShort(nzeroLod[j].Z);
                 zeroLod[j * 2 + 3] = Helper.PackFloatToUShort(nzeroLod[j].W);
             }
+#else
+            List<CellProcessor.BrickData> bricks = new List<CellProcessor.BrickData>();
+            float[] alods;
+            System.Numerics.Vector2[] nuv;
+            Vector3i topLodTextureSize;
+
+            // find non-empty cells
+            int usedCells = CellProcessor.ProcessBricks(data, dataSize, topLodCellSize, lowerBound, upperBound,
+                out topLodTextureSize,
+                out alods, out nuv, bricks);
+
+            Array3D<ushort>[] lods = new Array3D<ushort>[1];
+            {
+                lods[0] = new Array3D<ushort>(1, topLodTextureSize.X, topLodTextureSize.Y, topLodTextureSize.Z);
+                for (int j = 0; j < alods.Length; j++)
+                    lods[0][j] = Helper.PackFloatToUShort(alods[j]);
+            }
+
+            Array3D<ushort> uv = new Array3D<ushort>(2, topLodTextureSize.X, topLodTextureSize.Y, topLodTextureSize.Z);
+            for (int j = 0; j < nuv.Length; j++)
+            {
+                uv[j * 2 + 0] = Helper.PackFloatToUShort(nuv[j].X);
+                uv[j * 2 + 1] = Helper.PackFloatToUShort(nuv[j].Y);
+            }
+#endif
 
 
             MeshGenerator.Shape[] boxes = new MeshGenerator.Shape[bricks.Count];
@@ -472,6 +498,7 @@ namespace SDFTool
 
             Console.WriteLine("[{0}] Saving LODs", sw.Elapsed);
 
+#if OLD_MODE
             Helper.SaveKTX(
 #if LOD0_8BIT
                 Helper.KTX_RGBA8,
@@ -480,6 +507,7 @@ namespace SDFTool
 #endif
                 zeroLod, outFile, "_lod_0.3d.ktx");
 
+#endif
 #if LOD2_8BIT
             Helper.SaveKTX(Helper.KTX_R8, lodDistance, outFile, "_lod.3d.ktx");
 #else
