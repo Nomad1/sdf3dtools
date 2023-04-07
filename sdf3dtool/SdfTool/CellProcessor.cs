@@ -262,7 +262,7 @@ namespace RunServer.SdfTool
                             PixelData pixel = GetArrayData(brick.Item3, blockSize, coord);
 
                             // higher LOD
-                            SetArrayData(topLodDistances, pixel.DistanceUV.X, topLodTextureSize, blockStart + coord);
+                            SetArrayData(topLodDistances, pixel.DistanceUV.X * topLodCellSize / brick.Item2, topLodTextureSize, blockStart + coord);
 
                             // texture UV coords
                             SetArrayData(topLoduv, new Vector2(pixel.DistanceUV.Y, pixel.DistanceUV.Z), topLodTextureSize, blockStart + coord);
@@ -448,7 +448,7 @@ namespace RunServer.SdfTool
                                     for (int y = 0; y <= minCellSize; y++)
                                         for (int x = 0; x <= minCellSize; x++)
                                         {
-                                            PixelData pixel = GetArrayData(data, dataSize, dataStart + new Vector3i(x * ncells, y * ncells, z * ncells));
+                                            PixelData pixel = GetArrayData(cellData, cellDimensions, new Vector3i(x * ncells, y * ncells, z * ncells));
                                             float distance = pixel.DistanceUV.X;
                                             SetArrayData(reducedCellData, pixel, new Vector3i(minCellSize + 1, minCellSize + 1, minCellSize + 1), new Vector3i(x, y, z));
                                             SetArrayData(reducedCellDistances, distance, new Vector3i(minCellSize + 1, minCellSize + 1, minCellSize + 1), new Vector3i(x, y, z));
@@ -468,7 +468,7 @@ namespace RunServer.SdfTool
                                         maxDiff = diff;
                                 }
 
-                                if (maxDiff > epsilon) // TODO: another epsilon
+                                if (maxDiff > 1.0f / cellSize)// epsilon) // TODO: another epsilon
                                     continue; // don't store this cell
 
                                 brick = reducedCellData;
