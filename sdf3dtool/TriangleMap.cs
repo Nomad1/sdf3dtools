@@ -152,6 +152,7 @@ namespace SDFTool
             distance = float.MaxValue;
             float minDistanceSqrd = float.MaxValue;
             triangleId = -1;
+            PreparedTriangle closestTriangle = null;
             weights = Vector3.Zero;
             Vector3 result = Vector3.Zero;
             int sign;
@@ -246,7 +247,7 @@ namespace SDFTool
                             sign = tempSign;
 #endif
                             result = tempResult;
-                            triangleId = triangle.Id;
+                            closestTriangle = triangle;
                         }
                     }
 
@@ -305,11 +306,14 @@ namespace SDFTool
 
             distance *= sign;
 
+            if (closestTriangle != null)
+            {
+                triangleId = closestTriangle.Id;
+                distance = Math.Abs(Vector3.Dot(closestTriangle.N, point - result)) * sign;
+                return true;
+            }
 
-            //if (weights.X < 0 || weights.Y < 0 || weights.Z < 0 || weights.X > 1 || weights.Y > 1 || weights.Z > 1)
-            //Console.WriteLine("Weights are invalid!");
-
-            return true;
+            return false;
         }
 
         public int CountIntersections(Vector3 point, Vector3 dir)

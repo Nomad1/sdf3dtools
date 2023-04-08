@@ -1,5 +1,6 @@
 ﻿//#define LOD0_8BIT
 //#define LOD2_8BIT
+#define LOD2_16BIT
 
 using System;
 using System.Collections.Generic;
@@ -307,35 +308,16 @@ namespace SDFTool
 
         #endregion
 
-        private static void ProcessAssimpImport(string fileName, string outFile, int gridCellCount = 64, int lod0pixels = 32, int topLodCellSize = 4)
+        
+        private static DistanceData ProcessAssimpImport(
+            string fileName, int gridCellCount, int lod0pixels, int topLodCellSize,
+            Stopwatch sw, out Scene scene, out ValueTuple<string, Bone>[][] obones, out Matrix4x4 matrix 
+            )
         {
-            if (topLodCellSize <= 2)//(topLodCellSize & (topLodCellSize - 1)) != 0)
-            {
-                Console.Error.WriteLine("Top LOD cell size should be a power of two and greater than 2 (4, 8, 16, 32, etc.)!");
-                return;
-            }
-
-#if USE_LODS
-            int nlods = 0;
-            int lod = topLodCellSize;
-
-            while (lod >= 2 && lod % 2 == 0)
-            {
-                nlods++;
-                lod /= 2;
-            }
-#else
-            int numberOfLods = 1;
-#endif
-
-
-            Stopwatch sw = new Stopwatch();
-            sw.Start();
-
             Console.WriteLine("[{0}] Processing file {1}", sw.Elapsed, fileName);
 
             AssimpContext importer = new AssimpContext();
-            Scene scene = importer.ImportFile(fileName, PostProcessSteps.GenerateSmoothNormals);
+            scene = importer.ImportFile(fileName, PostProcessSteps.GenerateSmoothNormals | PostProcessSteps.Triangulate);
 
             Console.WriteLine("[{0}] File loaded", sw.Elapsed);
 
@@ -343,7 +325,6 @@ namespace SDFTool
 
             Vector sceneMin;
             Vector sceneMax;
-            Matrix4x4 matrix;
 
             IDictionary<int, ValueTuple<int, float>[]> boneDictionary;
             ValueTuple<string, Bone>[] bones;
@@ -401,14 +382,40 @@ namespace SDFTool
             // Use TriangleMap to generate raw SDF grid
             TriangleMap triangleMap = new TriangleMap(sceneMin, sceneMax, gridCellCount, triangleList);
 
-            Console.WriteLine("Bounding box: {0} - {1}, step {2}, triangles {3}, cells {4}, instances {5}", sceneMin, sceneMax, sceneToPixels, triangleMap.TriangleCount, triangleMap.CellsUsed, triangleMap.TriangleInstances);
-
             triangleMap.Dispatch(distanceData, lowerBound, pixelsToScene, sceneToPixels / topLodCellSize, sx, sy, sz, (progress) => Console.WriteLine("[{0}] Processing {1:P2}", sw.Elapsed, progress));
 
-            // Fill in data structure with SDF data and additional parameters from original model
+            Console.WriteLine("Bounding box: {0} - {1}, step {2}, triangles {3}, cells {4}, instances {5}", sceneMin, sceneMax, sceneToPixels, triangleMap.TriangleCount, triangleMap.CellsUsed, triangleMap.TriangleInstances);
+
             PixelData[] data = GetPixelData(distanceData, boneDictionary, triangleList);
 
             Console.WriteLine("[{0}] SDF data ready", sw.Elapsed);
+
+            obones = new[] { bones };
+
+            return new DistanceData(topLodCellSize, data, dataSize, lowerBound, upperBound); 
+        }
+
+        private static void ProcessPixelData(
+            DistanceData data,
+            string outFile, float psnr,
+            Stopwatch sw,
+            Scene scene = null, ValueTuple<string, Bone>[][] bones = null, Matrix4x4 matrix = default(Matrix4x4)
+            )
+        {
+            // Fill in data structure with SDF data and additional parameters from original model
+#if USE_LODS
+            int nlods = 0;
+            int lod = topLodCellSize;
+
+            while (lod >= 2 && lod % 2 == 0)
+            {
+                nlods++;
+                lod /= 2;
+            }
+#else
+            int numberOfLods = 1;
+#endif
+
 
 #if OLD_MODE
             List<CellProcessor.BrickData> bricks = new List<CellProcessor.BrickData>();
@@ -418,7 +425,7 @@ namespace SDFTool
             Vector3i topLodTextureSize;
 
             // find non-empty cells
-            int usedCells = CellProcessor.ProcessCells(data, dataSize, topLodCellSize, lowerBound, upperBound, numberOfLods,
+            int usedCells = CellProcessor.ProcessCells(data, numberOfLods,
                 out topLodTextureSize,
                 out alods, out nuv, out nzeroLod, bricks);
 
@@ -439,7 +446,7 @@ namespace SDFTool
                 uv[j * 2 + 1] = Helper.PackFloatToUShort(nuv[j].Y);
             }
 
-            Array3D<ushort> zeroLod = new Array3D<ushort>(4, dataSize.X / topLodCellSize, dataSize.Y / topLodCellSize, dataSize.Z / topLodCellSize);
+            Array3D<ushort> zeroLod = new Array3D<ushort>(4, data.Size.X / data.ellSize, data.Size.Y / data.CellSize, data.Size.Z / data.CellSize);
             for (int j = 0; j < nzeroLod.Length; j++)
             {
                 zeroLod[j * 2 + 0] = Helper.PackFloatToUShort(nzeroLod[j].X);
@@ -454,16 +461,25 @@ namespace SDFTool
             Vector3i topLodTextureSize;
 
             // find non-empty cells
-            int usedCells = CellProcessor.ProcessBricks(data, dataSize, topLodCellSize, lowerBound, upperBound,
+            int usedCells = CellProcessor.ProcessBricks(data,
                 out topLodTextureSize,
-                out alods, out nuv, bricks);
+                out alods, out nuv, bricks, psnr);
 
+#if LOD2_16BIT
             Array3D<ushort>[] lods = new Array3D<ushort>[1];
             {
                 lods[0] = new Array3D<ushort>(1, topLodTextureSize.X, topLodTextureSize.Y, topLodTextureSize.Z);
                 for (int j = 0; j < alods.Length; j++)
                     lods[0][j] = Helper.PackFloatToUShort(alods[j]);
             }
+#else
+            Array3D<float>[] lods = new Array3D<float>[1];
+            {
+                lods[0] = new Array3D<float>(1, topLodTextureSize.X, topLodTextureSize.Y, topLodTextureSize.Z);
+                for (int j = 0; j < alods.Length; j++)
+                    lods[0][j] = alods[j];
+            }
+#endif
 
             Array3D<ushort> uv = new Array3D<ushort>(2, topLodTextureSize.X, topLodTextureSize.Y, topLodTextureSize.Z);
             for (int j = 0; j < nuv.Length; j++)
@@ -472,7 +488,6 @@ namespace SDFTool
                 uv[j * 2 + 1] = Helper.PackFloatToUShort(nuv[j].Y);
             }
 #endif
-
 
             MeshGenerator.Shape[] boxes = new MeshGenerator.Shape[bricks.Count];
 
@@ -510,8 +525,10 @@ namespace SDFTool
 #endif
 #if LOD2_8BIT
             Helper.SaveKTX(Helper.KTX_R8, lodDistance, outFile, "_lod.3d.ktx");
-#else
+#elif LOD2_16BIT
             Helper.SaveKTX(Helper.KTX_R16F, lods, outFile, "_lod.3d.ktx");
+#else
+            Helper.SaveKTX(Helper.KTX_R32F, lods, outFile, "_lod.3d.ktx");
 #endif
 
             Helper.SaveKTX(Helper.KTX_RG16F, uv, outFile, "_lod_2_uv.3d.ktx");
@@ -521,11 +538,7 @@ namespace SDFTool
             MeshGenerator.Surface[] boxesSurface = new MeshGenerator.Surface[] { MeshGenerator.CreateBoxesMesh(boxes, "main_box") };
 
             //Helper.SaveAssimpMesh(boxesSurface, outFile, new[] { bones }, scene.Animations, scene);
-            Helper.SaveUMesh(boxesSurface, outFile, new[] { bones }, scene.Animations, scene, matrix);
-
-            Console.WriteLine("[{0}] All done", sw.Elapsed);
-
-            sw.Stop();
+            Helper.SaveUMesh(boxesSurface, outFile, bones, scene == null ? null : scene.Animations, scene, matrix);
         }
 
         static void Main(string[] args)
@@ -548,8 +561,22 @@ namespace SDFTool
             int gridSize = args.Length > 2 ? int.Parse(args[2]) : 64;
             int size = args.Length > 3 ? int.Parse(args[3]) : 32;
             int cellSize = args.Length > 4 ? int.Parse(args[4]) : 4;
+            float psnr = args.Length > 5 ? float.Parse(args[5]) : 30;
 
-            ProcessAssimpImport(fileName, outFileName, gridSize, size, cellSize);
+            Stopwatch sw = new Stopwatch();
+            sw.Start();
+
+            Scene scene;
+            ValueTuple<string, Bone>[][] bones;
+            Matrix4x4 matrix;
+            DistanceData data = ProcessAssimpImport(fileName, gridSize, size, cellSize, sw, out scene, out bones, out matrix);
+
+            ProcessPixelData(data, outFileName, psnr,
+                sw, scene, bones, matrix);
+
+
+            Console.WriteLine("[{0}] All done", sw.Elapsed);
+            sw.Stop();
         }
     }
 }

@@ -25,6 +25,24 @@ namespace RunServer.SdfTool
         }
     }
 
+    public struct DistanceData
+    {
+        public readonly int CellSize;
+        public readonly PixelData[] Data;
+        public readonly Vector3i Size;
+        public readonly Vector3 LowerBound;
+        public readonly Vector3 UpperBound;
+
+        public DistanceData(int cellSize, PixelData[] data, Vector3i size, Vector3 lowerBound, Vector3 upperBound)
+        {
+            CellSize = cellSize;
+            Data = data;
+            Size = size;
+            LowerBound = lowerBound;
+            UpperBound = upperBound;
+        }
+    }
+
     public static class CellProcessor
     {
         public struct BrickData
@@ -58,10 +76,7 @@ namespace RunServer.SdfTool
         /// <param name="boxArray"></param>
         /// <returns>cell count</returns>
         public static int ProcessCells(
-            PixelData[] data, Vector3i dataSize,
-
-            int topLodCellSize,
-            Vector3 lowerBound, Vector3 upperBound,
+            DistanceData data,
             int nlods,
 
             out Vector3i topLodTextureSize,
@@ -74,18 +89,18 @@ namespace RunServer.SdfTool
 
             int usedCells = 0;
 
-            int cellsx = dataSize.X / topLodCellSize;
-            int cellsy = dataSize.Y / topLodCellSize;
-            int cellsz = dataSize.Z / topLodCellSize;
+            int cellsx = data.Size.X / data.CellSize;
+            int cellsy = data.Size.Y / data.CellSize;
+            int cellsz = data.Size.Z / data.CellSize;
 
-            int paddedTopLodCellSize = topLodCellSize + 1;
+            int paddedTopLodCellSize = data.CellSize + 1;
 
             int totalCells = cellsx * cellsy * cellsz;
 
             Vector3i blockSize = new Vector3i(paddedTopLodCellSize, paddedTopLodCellSize, paddedTopLodCellSize);
 
             float[] cells = new float[totalCells];
-            usedCells = CheckCells(data, dataSize, topLodCellSize, cells);
+            usedCells = CheckCells(data.Data, data.Size, data.CellSize, cells);
 
             DebugLog("Used cells: {0}, cellsx: {1}, cellsy: {2}, cellsz: {3}, blockSize: {4}", usedCells, cellsx, cellsy, cellsz, paddedTopLodCellSize);
 
@@ -111,7 +126,7 @@ namespace RunServer.SdfTool
 
             zeroLodData = new Vector4[cellsx * cellsy * cellsz];
 
-            Vector3 boxStep = (upperBound - lowerBound) / new Vector3(cellsx, cellsy, cellsz);
+            Vector3 boxStep = (data.UpperBound - data.LowerBound) / new Vector3(cellsx, cellsy, cellsz);
 
             int brickId = 0;
 
@@ -149,7 +164,7 @@ namespace RunServer.SdfTool
 
                             float[] distanceBlock = new float[paddedTopLodCellSize * paddedTopLodCellSize * paddedTopLodCellSize];
 
-                            Vector3i dataStart = new Vector3i(ix * topLodCellSize, iy * topLodCellSize, iz * topLodCellSize);
+                            Vector3i dataStart = new Vector3i(ix * data.CellSize, iy * data.CellSize, iz * data.CellSize);
 
                             for (int z = 0; z < paddedTopLodCellSize; z++)
                                 for (int y = 0; y < paddedTopLodCellSize; y++)
@@ -157,7 +172,7 @@ namespace RunServer.SdfTool
                                     {
                                         Vector3i coord = new Vector3i(x, y, z);
 
-                                        PixelData pixel = GetArrayData(data, dataSize, dataStart + coord);
+                                        PixelData pixel = GetArrayData(data.Data, data.Size, dataStart + coord);
 #if USE_LODS
                                         // block for lower LOD calculation
                                         SetArrayData(distanceBlock, pixel.DistanceUV.X, blockSize, coord);
@@ -169,7 +184,7 @@ namespace RunServer.SdfTool
                                         SetArrayData(topLoduv, new Vector2(pixel.DistanceUV.Y, pixel.DistanceUV.Z), topLodTextureSize, blockStart + coord);
                                     }
 
-                            float[] distancePercentageArr = GetTrilinear(distanceBlock, paddedTopLodCellSize, 1, new Vector3(topLodCellSize / 2.0f));
+                            float[] distancePercentageArr = GetTrilinear(distanceBlock, paddedTopLodCellSize, 1, new Vector3(data.CellSize / 2.0f));
 
                             distancePercentage = distancePercentageArr[0]; // central point
 
@@ -189,9 +204,9 @@ namespace RunServer.SdfTool
                             }
 #endif
 
-                            ValueTuple<int, float>[][] boxBones = GetBoxWeights(weightCache, data, dataSize, dataStart, topLodCellSize, new Vector3i(ix, iy, iz));
+                            ValueTuple<int, float>[][] boxBones = GetBoxWeights(weightCache, data.Data, data.Size, dataStart, data.CellSize, new Vector3i(ix, iy, iz));
 
-                            boxes.Add(new BrickData(brickId, lowerBound + boxStep * new Vector3(ix, iy, iz), boxStep, boxBones));
+                            boxes.Add(new BrickData(brickId, data.LowerBound + boxStep * new Vector3(ix, iy, iz), boxStep, boxBones));
                         }
 
 
@@ -202,30 +217,28 @@ namespace RunServer.SdfTool
         }
 
         public static int ProcessBricks(
-            PixelData[] data, Vector3i dataSize,
-
-            int topLodCellSize,
-            Vector3 lowerBound, Vector3 upperBound,
+            DistanceData data,
 
             out Vector3i topLodTextureSize,
             out float[] topLodDistances,
             out Vector2[] topLoduv,
-            IList<BrickData> boxes)
+            IList<BrickData> boxes,
+            float targetPsnr)
         {
             Dictionary<Vector3i, ValueTuple<int, float>[]> weightCache = new Dictionary<Vector3i, ValueTuple<int, float>[]>();
 
-            int cellsx = dataSize.X / topLodCellSize;
-            int cellsy = dataSize.Y / topLodCellSize;
-            int cellsz = dataSize.Z / topLodCellSize;
+            int cellsx = data.Size.X / data.CellSize;
+            int cellsy = data.Size.Y / data.CellSize;
+            int cellsz = data.Size.Z / data.CellSize;
 
-            int paddedTopLodCellSize = topLodCellSize + 1;
+            int paddedTopLodCellSize = data.CellSize + 1;
 
             Vector3i blockSize = new Vector3i(paddedTopLodCellSize, paddedTopLodCellSize, paddedTopLodCellSize);
 
             //DebugLog("Used cells: {0}, cellsx: {1}, cellsy: {2}, cellsz: {3}, blockSize: {4}", usedCells, cellsx, cellsy, cellsz, paddedTopLodCellSize);
 
-            List<ValueTuple<Vector3i, int, PixelData[], float>> bricks = new List<ValueTuple<Vector3i, int, PixelData[], float>>();
-            FindBricks(data, dataSize, topLodCellSize, 1.0f / paddedTopLodCellSize, bricks);
+            List<ValueTuple<Vector3i, int, PixelData[]>> bricks = new List<ValueTuple<Vector3i, int, PixelData[]>>();
+            FindBricks(data.Data, data.Size, data.CellSize, targetPsnr, bricks);
 
 
             int packx;
@@ -239,13 +252,13 @@ namespace RunServer.SdfTool
 
             topLoduv = new Vector2[packx * paddedTopLodCellSize * packy * paddedTopLodCellSize * packz * paddedTopLodCellSize];
 
-            Vector3 boxStep = (upperBound - lowerBound) / new Vector3(cellsx, cellsy, cellsz);
+            Vector3 boxStep = (data.UpperBound - data.LowerBound) / new Vector3(cellsx, cellsy, cellsz);
 
             int pxy = packx * packy;
 
             for (int i = 0; i < bricks.Count; i++)
             {   
-                ValueTuple<Vector3i, int, PixelData[], float> brick = bricks[i];
+                ValueTuple<Vector3i, int, PixelData[]> brick = bricks[i];
 
                 int atlasZ = ((i / pxy));
                 int atlasY = ((i % pxy) / packx);
@@ -262,15 +275,15 @@ namespace RunServer.SdfTool
                             PixelData pixel = GetArrayData(brick.Item3, blockSize, coord);
 
                             // higher LOD
-                            SetArrayData(topLodDistances, pixel.DistanceUV.X * topLodCellSize / brick.Item2, topLodTextureSize, blockStart + coord);
+                            SetArrayData(topLodDistances, pixel.DistanceUV.X * data.CellSize / brick.Item2, topLodTextureSize, blockStart + coord);
 
                             // texture UV coords
                             SetArrayData(topLoduv, new Vector2(pixel.DistanceUV.Y, pixel.DistanceUV.Z), topLodTextureSize, blockStart + coord);
                         }
 
-                ValueTuple<int, float>[][] boxBones = GetBoxWeights(weightCache, brick.Item3, blockSize, new Vector3i(0,0,0), topLodCellSize, brick.Item1 / topLodCellSize);
+                ValueTuple<int, float>[][] boxBones = GetBoxWeights(weightCache, brick.Item3, blockSize, new Vector3i(0,0,0), data.CellSize, brick.Item1 / data.CellSize);
 
-                boxes.Add(new BrickData(i, lowerBound + boxStep * new Vector3(brick.Item1.X, brick.Item1.Y, brick.Item1.Z) / topLodCellSize, boxStep * brick.Item2 / topLodCellSize, boxBones));
+                boxes.Add(new BrickData(i, data.LowerBound + boxStep * new Vector3(brick.Item1.X, brick.Item1.Y, brick.Item1.Z) / data.CellSize, boxStep * brick.Item2 / data.CellSize, boxBones));
             }
 
             return bricks.Count;
@@ -336,8 +349,8 @@ namespace RunServer.SdfTool
 
         private static void FindBricks(
             PixelData[] data, Vector3i dataSize,
-            int minCellSize, float epsilon,
-            IList<ValueTuple<Vector3i, int, PixelData[], float>> cells)
+            int minCellSize, float minPsnr,
+            IList<ValueTuple<Vector3i, int, PixelData[]>> cells)
         {
             int minCellsx = dataSize.X / minCellSize;
             int minCellsy = dataSize.Y / minCellSize;
@@ -388,7 +401,7 @@ namespace RunServer.SdfTool
 
                             Vector3i dataStart = new Vector3i(ix * cellSize, iy * cellSize, iz * cellSize);
 
-                            float minDistance = float.MaxValue;
+                            //float minDistance = float.MaxValue;
 
                             int countPositive = 0;
                             int countNegative = 0;
@@ -409,10 +422,10 @@ namespace RunServer.SdfTool
                                             if (distance < 0)
                                             countNegative++;
 
-                                        if (Math.Abs(distance) < minDistance)
-                                        {
-                                            minDistance = Math.Abs(distance);
-                                        }
+                                        //if (Math.Abs(distance) < minDistance)
+                                        //{
+                                        //    minDistance = Math.Abs(distance);
+                                        //}
 
                                         SetArrayData(cellData, pixel, cellDimensions, new Vector3i(x, y, z));
                                     }
@@ -441,7 +454,7 @@ namespace RunServer.SdfTool
 
                                 // we take only each 'step' pixels including first and last one
 
-                                PixelData[] reducedCellData = new PixelData[(minCellSize + 1) * (minCellSize + 1) * (minCellSize + 1)];
+                                /*PixelData[] reducedCellData = new PixelData[(minCellSize + 1) * (minCellSize + 1) * (minCellSize + 1)];
                                 float[] reducedCellDistances = new float[(minCellSize + 1) * (minCellSize + 1) * (minCellSize + 1)];
 
                                 for (int z = 0; z <= minCellSize; z++)
@@ -454,22 +467,29 @@ namespace RunServer.SdfTool
                                             SetArrayData(reducedCellDistances, distance, new Vector3i(minCellSize + 1, minCellSize + 1, minCellSize + 1), new Vector3i(x, y, z));
                                         }
 
-                                //float[] reducedCellData = GenerateLod(cellData, cellSize + 1, minCellSize + 1);
+                                //float[] reducedCellDistances = GenerateLod(cellData, cellSize + 1, minCellSize + 1);
 
-                                float[] enlargedCellDistances = GenerateLod(reducedCellDistances, minCellSize + 1, cellSize + 1);
+                                float[] enlargedCellDistances = GenerateLod(reducedCellDistances, minCellSize + 1, cellSize + 1);*/
+
+                                PixelData[] reducedCellData = GenerateLod(cellData, cellSize + 1, minCellSize + 1);
+                                PixelData[] enlargedCellData = GenerateLod(reducedCellData, minCellSize + 1, cellSize + 1);
 
 
-                                float maxDiff = 0;
+                                float mse = 0;
 
                                 for (int i = 0; i < cellData.Length; i++)
                                 {
-                                    float diff = Math.Abs(cellData[i].DistanceUV.X - enlargedCellDistances[i]);
-                                    if (diff > maxDiff)
-                                        maxDiff = diff;
+                                    float diff = Math.Abs(cellData[i].DistanceUV.X - enlargedCellData[i].DistanceUV.X);
+
+                                    mse += diff * diff;
                                 }
 
-                                if (maxDiff > 1.0f / cellSize)// epsilon) // TODO: another epsilon
-                                    continue; // don't store this cell
+                                mse /= cellData.Length;
+
+                                float psnr = (float)(10.0 * Math.Log10(1.0 / mse));
+
+                                if (psnr < minPsnr)
+                                    continue;
 
                                 brick = reducedCellData;
 
@@ -488,7 +508,7 @@ namespace RunServer.SdfTool
 
                             // add result to `cells`
 
-                            cells.Add(new ValueTuple<Vector3i, int, PixelData[], float>(dataStart, cellSize, brick, minDistance));
+                            cells.Add(new ValueTuple<Vector3i, int, PixelData[]>(dataStart, cellSize, brick));
                             cellCount++;
                         }
                     }
@@ -709,6 +729,52 @@ namespace RunServer.SdfTool
             return result;
         }
 
+        private static PixelData GetTrilinear(PixelData[] block, int blockSize, Vector3 coord)
+        {
+            int ix = (int)coord.X;
+            int iy = (int)coord.Y;
+            int iz = (int)coord.Z;
+            float frx = coord.X - ix;
+            float fry = coord.Y - iy;
+            float frz = coord.Z - iz;
+
+            float[] coef =
+            {
+                (1.0f - frx) * (1.0f - fry) * (1.0f - frz),
+                (frx) * (1.0f - fry) * (1.0f - frz),
+                (1.0f - frx) * (fry) * (1.0f - frz),
+                (frx) * (fry) * (1.0f - frz),
+                (1.0f - frx) * (1.0f - fry) * (frz),
+                (frx) * (1.0f - fry) * (frz),
+                (1.0f - frx) * (fry) * (frz),
+                (frx) * (fry) * (frz)
+            };
+
+
+            Vector3i blockDimensions = new Vector3i(blockSize, blockSize, blockSize);
+
+            float dx = 0;
+            float dy = 0;
+            float dz = 0;
+
+            for (int i = 0; i < coef.Length; i++)
+            {
+                Vector3i ip = new Vector3i(ix + s_trilinearShifts[i].X, iy + s_trilinearShifts[i].Y, iz + s_trilinearShifts[i].Z);
+
+                if (ip.X >= blockSize || ip.Y >= blockSize || ip.Z >= blockSize)
+                    continue;
+
+                PixelData data = GetArrayData(block, blockDimensions, ip);
+
+                dx += coef[i] * data.DistanceUV.X;
+                dy += coef[i] * data.DistanceUV.Y;
+                dz += coef[i] * data.DistanceUV.Z;
+            }
+            PixelData nearest = GetArrayData(block, blockDimensions, new Vector3i((int)Math.Round(frx), (int)Math.Round(fry), (int)Math.Round(frz)));
+
+            return new PixelData(dx, dy, dz, nearest.Bones, nearest.BoneWeights);
+        }
+
         private static float[] GenerateLod(float[] sourceData, int sourceSize, int targetSize)
         {
             float[] result = new float[targetSize * targetSize * targetSize];
@@ -724,6 +790,26 @@ namespace RunServer.SdfTool
                         float[] value = GetTrilinear(sourceData, sourceSize, 1, new Vector3(nx, ny, nz) * step);
 
                         result[nx + ny * targetSize + nz * targetSize * targetSize] = value[0];
+                    }
+                }
+            }
+
+            return result;
+        }
+
+        private static PixelData[] GenerateLod(PixelData[] sourceData, int sourceSize, int targetSize)
+        {
+            PixelData[] result = new PixelData[targetSize * targetSize * targetSize];
+
+            float step = (sourceSize - 1.0f) / (targetSize - 1.0f);
+
+            for (int nz = 0; nz < targetSize; nz++)
+            {
+                for (int ny = 0; ny < targetSize; ny++)
+                {
+                    for (int nx = 0; nx < targetSize; nx++)
+                    {
+                        result[nx + ny * targetSize + nz * targetSize * targetSize] = GetTrilinear(sourceData, sourceSize, new Vector3(nx, ny, nz) * step);
                     }
                 }
             }

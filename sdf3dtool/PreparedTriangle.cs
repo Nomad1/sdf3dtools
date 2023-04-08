@@ -1,4 +1,6 @@
-﻿using System;
+﻿//#define USE_OLD_DISTANCE
+
+using System;
 using System.Numerics;
 
 namespace SDFTool
@@ -8,7 +10,7 @@ namespace SDFTool
         public readonly int Id;
 
         // Vertices
-        private readonly Vector3 A, B, C;
+        public readonly Vector3 A, B, C;
         // Normal
         public readonly Vector3 N;
 
