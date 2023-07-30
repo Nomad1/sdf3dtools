@@ -38,5 +38,10 @@ namespace RunServer.SdfTool
         {
             return new Vector3i(one.X / another, one.Y / another, one.Z / another);
         }
+
+        public static Vector3i operator *(Vector3i one, int another)
+        {
+            return new Vector3i(one.X * another, one.Y * another, one.Z * another);
+        }
     }
 }

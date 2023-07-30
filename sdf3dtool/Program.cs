@@ -1,6 +1,7 @@
 ﻿//#define LOD0_8BIT
 //#define LOD2_8BIT
 #define LOD2_16BIT
+//#define OLD_MODE
 
 using System;
 using System.Collections.Generic;
@@ -382,7 +383,7 @@ namespace SDFTool
             // Use TriangleMap to generate raw SDF grid
             TriangleMap triangleMap = new TriangleMap(sceneMin, sceneMax, gridCellCount, triangleList);
 
-            triangleMap.Dispatch(distanceData, lowerBound, pixelsToScene, sceneToPixels / topLodCellSize, sx, sy, sz, (progress) => Console.WriteLine("[{0}] Processing {1:P2}", sw.Elapsed, progress));
+            triangleMap.Dispatch(distanceData, lowerBound, pixelsToScene, sceneToPixels / paddedTopLodCellSize, sx, sy, sz, (progress) => Console.WriteLine("[{0}] Processing {1:P2}", sw.Elapsed, progress));
 
             Console.WriteLine("Bounding box: {0} - {1}, step {2}, triangles {3}, cells {4}, instances {5}", sceneMin, sceneMax, sceneToPixels, triangleMap.TriangleCount, triangleMap.CellsUsed, triangleMap.TriangleInstances);
 
@@ -446,7 +447,7 @@ namespace SDFTool
                 uv[j * 2 + 1] = Helper.PackFloatToUShort(nuv[j].Y);
             }
 
-            Array3D<ushort> zeroLod = new Array3D<ushort>(4, data.Size.X / data.ellSize, data.Size.Y / data.CellSize, data.Size.Z / data.CellSize);
+            Array3D<ushort> zeroLod = new Array3D<ushort>(4, data.Size.X / data.CellSize, data.Size.Y / data.CellSize, data.Size.Z / data.CellSize);
             for (int j = 0; j < nzeroLod.Length; j++)
             {
                 zeroLod[j * 2 + 0] = Helper.PackFloatToUShort(nzeroLod[j].X);

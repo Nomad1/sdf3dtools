@@ -1,4 +1,4 @@
-﻿#define DONT_USE_EARLY_EXIT
+﻿//#define DONT_USE_EARLY_EXIT
 //#define EXTRA_VECTORS
 //#define GENERATE_UDF
 
@@ -309,7 +309,7 @@ namespace SDFTool
             if (closestTriangle != null)
             {
                 triangleId = closestTriangle.Id;
-                distance = Math.Abs(Vector3.Dot(closestTriangle.N, point - result)) * sign;
+                //distance = Math.Min(distance, Math.Abs(Vector3.Dot(closestTriangle.N, point - result))) * sign;
                 return true;
             }
 
@@ -628,7 +628,8 @@ namespace SDFTool
 
                 bool empty = !FindTriangles(point, out sceneDistance, out triangleWeights, out triangleId);
 
-                pixelDistance = Math.Sign(sceneDistance) * Math.Min(Math.Abs(sceneDistance * sceneToPixels), 1.0f);
+                //pixelDistance = Math.Sign(sceneDistance) * Math.Min(Math.Abs(sceneDistance * sceneToPixels), 1.0f);
+                pixelDistance = sceneDistance * sceneToPixels;
 
                 // distance in brick units [-1.0;1.0] where 1 corresponds to brick size
                 data[i * 4 + 0] = pixelDistance;

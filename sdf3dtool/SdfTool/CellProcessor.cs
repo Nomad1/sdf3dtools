@@ -136,6 +136,8 @@ namespace RunServer.SdfTool
                     for (int ix = 0; ix < cellsx; ix++)
                     {
                         int index = ix + iy * cellsx + iz * cellsx * cellsy;
+                        Vector3i vindex = new Vector3i(ix, iy, iz);
+
 
                         int atlasX = 0;
                         int atlasY = 0;
@@ -164,7 +166,7 @@ namespace RunServer.SdfTool
 
                             float[] distanceBlock = new float[paddedTopLodCellSize * paddedTopLodCellSize * paddedTopLodCellSize];
 
-                            Vector3i dataStart = new Vector3i(ix * data.CellSize, iy * data.CellSize, iz * data.CellSize);
+                            Vector3i dataStart = vindex * data.CellSize;
 
                             for (int z = 0; z < paddedTopLodCellSize; z++)
                                 for (int y = 0; y < paddedTopLodCellSize; y++)
@@ -204,13 +206,13 @@ namespace RunServer.SdfTool
                             }
 #endif
 
-                            ValueTuple<int, float>[][] boxBones = GetBoxWeights(weightCache, data.Data, data.Size, dataStart, data.CellSize, new Vector3i(ix, iy, iz));
+                            ValueTuple<int, float>[][] boxBones = GetBoxWeights(weightCache, data.Data, data.Size, dataStart, data.CellSize, vindex);
 
-                            boxes.Add(new BrickData(brickId, data.LowerBound + boxStep * new Vector3(ix, iy, iz), boxStep, boxBones));
+                            boxes.Add(new BrickData(brickId, data.LowerBound + new Vector3(ix, iy, iz) * boxStep, boxStep, boxBones));
                         }
 
 
-                        SetArrayData(zeroLodData, new Vector4(distancePercentage, atlasX, atlasY, atlasZ), new Vector3i(cellsx, cellsy, cellsz), new Vector3i(ix, iy, iz));
+                        SetArrayData(zeroLodData, new Vector4(distancePercentage, atlasX, atlasY, atlasZ), new Vector3i(cellsx, cellsy, cellsz), vindex);
                     }
 
             return usedCells;
@@ -239,7 +241,6 @@ namespace RunServer.SdfTool
 
             List<ValueTuple<Vector3i, int, PixelData[]>> bricks = new List<ValueTuple<Vector3i, int, PixelData[]>>();
             FindBricks(data.Data, data.Size, data.CellSize, targetPsnr, bricks);
-
 
             int packx;
             int packy;
@@ -281,7 +282,8 @@ namespace RunServer.SdfTool
                             SetArrayData(topLoduv, new Vector2(pixel.DistanceUV.Y, pixel.DistanceUV.Z), topLodTextureSize, blockStart + coord);
                         }
 
-                ValueTuple<int, float>[][] boxBones = GetBoxWeights(weightCache, brick.Item3, blockSize, new Vector3i(0,0,0), data.CellSize, brick.Item1 / data.CellSize);
+                //ValueTuple<int, float>[][] boxBones = GetBoxWeights(weightCache, brick.Item3, blockSize, new Vector3i(0,0,0), data.CellSize, brick.Item1 / data.CellSize);
+                ValueTuple<int, float>[][] boxBones = GetBoxWeights(weightCache, data.Data, data.Size, brick.Item1, data.CellSize, brick.Item1 / data.CellSize);
 
                 boxes.Add(new BrickData(i, data.LowerBound + boxStep * new Vector3(brick.Item1.X, brick.Item1.Y, brick.Item1.Z) / data.CellSize, boxStep * brick.Item2 / data.CellSize, boxBones));
             }
@@ -628,7 +630,9 @@ namespace RunServer.SdfTool
 
                 ValueTuple<int, float>[] oldWeights;
 
-                if (cache.TryGetValue(index + s_boxIndices[i], out oldWeights))
+                Vector3i nindex = index + s_boxIndices[i];
+
+                if (cache.TryGetValue(nindex, out oldWeights))
                 {
                     foreach (var pair in oldWeights)
                     {
@@ -665,7 +669,7 @@ namespace RunServer.SdfTool
 
                 result[i] = oldWeights;
 
-                cache[index] = oldWeights;
+                cache[nindex] = oldWeights;
             }
 
             return result;
