@@ -51,13 +51,15 @@ namespace RunServer.SdfTool
             public readonly Vector3 Size;
             public readonly int BrickId;
             public readonly ValueTuple<int, float>[][] BoneWeights;
+            public readonly float[][] VertexDistances;
 
-            public BrickData(int id, Vector3 position, Vector3 size, ValueTuple<int, float>[][] weights)
+            public BrickData(int id, Vector3 position, Vector3 size, ValueTuple<int, float>[][] weights, float[][] distances)
             {
                 Position = position;
                 BrickId = id;
                 Size = size;
                 BoneWeights = weights;
+                VertexDistances = distances;
             }
         }
 
@@ -206,9 +208,11 @@ namespace RunServer.SdfTool
                             }
 #endif
 
-                            ValueTuple<int, float>[][] boxBones = GetBoxWeights(weightCache, data.Data, data.Size, dataStart, data.CellSize, vindex);
+                            ValueTuple<int, float>[][] boxBones = GetCubeWeights(weightCache, data.Data, data.Size, dataStart, data.CellSize, vindex);
 
-                            boxes.Add(new BrickData(brickId, data.LowerBound + new Vector3(ix, iy, iz) * boxStep, boxStep, boxBones));
+                            float[][] vertexDistances = GetCubeDistances(data.Data, data.Size, dataStart, data.CellSize);
+
+                            boxes.Add(new BrickData(brickId, data.LowerBound + new Vector3(ix, iy, iz) * boxStep, boxStep, boxBones, vertexDistances));
                         }
 
 
@@ -258,7 +262,7 @@ namespace RunServer.SdfTool
             int pxy = packx * packy;
 
             for (int i = 0; i < bricks.Count; i++)
-            {   
+            {
                 ValueTuple<Vector3i, int, PixelData[]> brick = bricks[i];
 
                 int atlasZ = ((i / pxy));
@@ -283,15 +287,16 @@ namespace RunServer.SdfTool
                         }
 
                 //ValueTuple<int, float>[][] boxBones = GetBoxWeights(weightCache, brick.Item3, blockSize, new Vector3i(0,0,0), data.CellSize, brick.Item1 / data.CellSize);
-                ValueTuple<int, float>[][] boxBones = GetBoxWeights(weightCache, data.Data, data.Size, brick.Item1, data.CellSize, brick.Item1 / data.CellSize);
+                ValueTuple<int, float>[][] boxBones = GetCubeWeights(weightCache, data.Data, data.Size, brick.Item1, data.CellSize, brick.Item1 / data.CellSize);
+                float[][] vertexDistances = GetCubeDistances(data.Data, data.Size, brick.Item1, data.CellSize);
 
-                boxes.Add(new BrickData(i, data.LowerBound + boxStep * new Vector3(brick.Item1.X, brick.Item1.Y, brick.Item1.Z) / data.CellSize, boxStep * brick.Item2 / data.CellSize, boxBones));
+                boxes.Add(new BrickData(i, data.LowerBound + boxStep * new Vector3(brick.Item1.X, brick.Item1.Y, brick.Item1.Z) / data.CellSize, boxStep * brick.Item2 / data.CellSize, boxBones, vertexDistances));
             }
 
             return bricks.Count;
         }
 
-        private static int CheckCells(PixelData[] data, Vector3i dataSize, int cellSize, float [] cells)
+        private static int CheckCells(PixelData[] data, Vector3i dataSize, int cellSize, float[] cells)
         {
             int usedCells = 0;
             int cellsx = dataSize.X / cellSize;
@@ -377,7 +382,7 @@ namespace RunServer.SdfTool
                 cellsy = dataSize.Y / cellSize;
                 cellsz = dataSize.Z / cellSize;
             }; // faster and easier than log calculation
-          
+
 
             // first we start with largest cell size that is (minCellSize >> steps) and go down to minCellSize
             for (int s = steps; s >= 1; s--)
@@ -525,7 +530,7 @@ namespace RunServer.SdfTool
 
         #region Interpolation and LODs
 
-        private static readonly Vector3i[] s_boxIndices =
+        private static readonly Vector3i[] s_cubeIndices =
         {
             new Vector3i(0,0,0),
             new Vector3i(1,0,0),
@@ -537,7 +542,19 @@ namespace RunServer.SdfTool
             new Vector3i(0,0,1),
         };
 
-        private static ValueTuple<int, float>[][] GetBoxWeights(
+        private static float[][] GetCubeDistances(
+            PixelData[] data, Vector3i dataSize, Vector3i dataStart,
+            int blockSize)
+        {
+            float[][] vertexDistances = new float[8][];
+
+            for (int i = 0; i < vertexDistances.Length; i++)
+                vertexDistances[i] = new float[] { GetArrayData(data, dataSize, dataStart + s_cubeIndices[i] * blockSize).DistanceUV.X };
+
+            return vertexDistances;
+        }
+
+        private static ValueTuple<int, float>[][] GetCubeWeights(
             Dictionary<Vector3i, ValueTuple<int, float>[]> cache,
             PixelData[] data, Vector3i dataSize, Vector3i dataStart,
             int blockSize,
@@ -554,10 +571,11 @@ namespace RunServer.SdfTool
             for (int i = 0; i < 8; i++)
                 vertexWeights[i] = new List<ValueTuple<Vector3, Vector4i, Vector4>>();
 
-            for (int z = 0; z < blockSize - 1; z++)
-                for (int y = 0; y < blockSize - 1; y++)
-                    for (int x = 0; x < blockSize - 1; x++)
+            for (int z = 0; z < ubz; z++)
+                for (int y = 0; y < uby; y++)
+                    for (int x = 0; x < ubx; x++)
                     {
+                        Vector3i coord = dataStart + new Vector3i(x, y, z);
                         PixelData pixelData = GetArrayData(data, dataSize, dataStart + new Vector3i(x, y, z));
 
                         float dist = pixelData.DistanceUV.X;
@@ -565,13 +583,13 @@ namespace RunServer.SdfTool
 
                         // checks if a surface crosses nearest 2x2x2 texel cube
                         if (Math.Abs(dist) <= 1 ||
-                            sign != Math.Sign(GetArrayData(data, dataSize, dataStart + new Vector3i(x + 1, y + 0, z + 0)).DistanceUV.X) ||
-                            sign != Math.Sign(GetArrayData(data, dataSize, dataStart + new Vector3i(x + 0, y + 1, z + 0)).DistanceUV.X) ||
-                            sign != Math.Sign(GetArrayData(data, dataSize, dataStart + new Vector3i(x + 1, y + 1, z + 0)).DistanceUV.X) ||
-                            sign != Math.Sign(GetArrayData(data, dataSize, dataStart + new Vector3i(x + 1, y + 0, z + 1)).DistanceUV.X) ||
-                            sign != Math.Sign(GetArrayData(data, dataSize, dataStart + new Vector3i(x + 0, y + 1, z + 1)).DistanceUV.X) ||
-                            sign != Math.Sign(GetArrayData(data, dataSize, dataStart + new Vector3i(x + 1, y + 1, z + 1)).DistanceUV.X) ||
-                            sign != Math.Sign(GetArrayData(data, dataSize, dataStart + new Vector3i(x + 1, y + 1, z + 1)).DistanceUV.X)
+                            sign != Math.Sign(GetArrayData(data, dataSize, coord + s_cubeIndices[1]).DistanceUV.X) ||
+                            sign != Math.Sign(GetArrayData(data, dataSize, coord + s_cubeIndices[2]).DistanceUV.X) ||
+                            sign != Math.Sign(GetArrayData(data, dataSize, coord + s_cubeIndices[3]).DistanceUV.X) ||
+                            sign != Math.Sign(GetArrayData(data, dataSize, coord + s_cubeIndices[4]).DistanceUV.X) ||
+                            sign != Math.Sign(GetArrayData(data, dataSize, coord + s_cubeIndices[5]).DistanceUV.X) ||
+                            sign != Math.Sign(GetArrayData(data, dataSize, coord + s_cubeIndices[6]).DistanceUV.X) ||
+                            sign != Math.Sign(GetArrayData(data, dataSize, coord + s_cubeIndices[7]).DistanceUV.X)
                             )
                         {
                             vertexWeights[0].Add(new ValueTuple<Vector3, Vector4i, Vector4>(new Vector3(x, y, z), pixelData.Bones, pixelData.BoneWeights));
@@ -630,7 +648,7 @@ namespace RunServer.SdfTool
 
                 ValueTuple<int, float>[] oldWeights;
 
-                Vector3i nindex = index + s_boxIndices[i];
+                Vector3i nindex = index + s_cubeIndices[i];
 
                 if (cache.TryGetValue(nindex, out oldWeights))
                 {

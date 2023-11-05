@@ -493,6 +493,7 @@ namespace SDFTool
             MeshGenerator.Shape[] boxes = new MeshGenerator.Shape[bricks.Count];
 
             for (int i = 0; i < boxes.Length; i++)
+            {
                 boxes[i] = new MeshGenerator.Shape(
                     System.Numerics.Matrix4x4.CreateScale(bricks[i].Size) * System.Numerics.Matrix4x4.CreateTranslation(bricks[i].Position),
                     System.Numerics.Matrix4x4.Identity,
@@ -500,7 +501,10 @@ namespace SDFTool
                     MeshGenerator.ShapeFlags.NoNormals,
                     new float[] {
                         bricks[i].BrickId
-                    }, bricks[i].BoneWeights);
+                    });
+
+                boxes[i].SetCubeVertexData(bricks[i].VertexDistances, bricks[i].BoneWeights);
+            }
 
 
             //Console.WriteLine("[{0}] Got {1} empty cells, cell grid size {2}, {3:P}, total {4} of {5}x{5}x{5} cells, size {6} vs {7}, grid {8}x{9}x{10}",

@@ -70,9 +70,20 @@ namespace SDFTool
             public readonly ShapeType Type;
             public readonly ShapeFlags Flags;
 
-            public readonly float[] ExtraData;
-            public readonly ValueTuple<int, float>[][] Weights;
+            public readonly float[] ExtraShapeData;
 
+
+            public float[][] ExtraVertexData;
+            public ValueTuple<int, float>[][] Weights;
+
+            /// <summary>
+            /// 
+            /// </summary>
+            /// <param name="vertexTransform">Model matrix</param>
+            /// <param name="textureTransform">UV transform matrix</param>
+            /// <param name="type">Cube, Box or something else</param>
+            /// <param name="flags"></param>
+            /// <param name="extra">Extra data stored to all vertices UV coords</param>
             public Shape(
                             Matrix4x4 vertexTransform,
                             Matrix4x4 textureTransform,
@@ -85,7 +96,22 @@ namespace SDFTool
                 TextureTransform = textureTransform;
                 Type = type;
                 Flags = flags;
-                ExtraData = extra;
+                ExtraShapeData = extra;
+                Weights = weights;
+                ExtraVertexData = null;
+                Weights = null;
+            }
+
+            /// <summary>
+            /// 
+            /// </summary>
+            /// <param name="extra">Additional UV data for all vertices. It makes sense only when we know the exact amount of vertices and their order, i.e. only for Cube</param>
+            /// <param name="weights">Vertex weights for all vertices. It makes sense only when we know the exact amount of vertices and their order, i.e. only for Cube</param>
+            public void SetCubeVertexData(
+                            float[][] extra,
+                            ValueTuple<int, float>[][] weights = null)
+            {
+                ExtraVertexData = extra;
                 Weights = weights;
             }
 
@@ -135,7 +161,12 @@ namespace SDFTool
                         tc.Add(0);
                     }
 
-                    tc.AddRange(ExtraData);
+                    tc.AddRange(ExtraShapeData);
+
+                    if (ExtraVertexData != null)
+                    {
+                        tc.AddRange(ExtraVertexData[i]);
+                    }
 
                     texCoords[i] = tc.ToArray();
                 }
