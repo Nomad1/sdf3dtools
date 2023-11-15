@@ -23,9 +23,11 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|x86' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>pdbonly</DebugType>
     <Optimize>true</Optimize>
     <OutputPath>bin\Release</OutputPath>
-    <DefineConstants>USE_SYSTEM_DRAWING</DefineConstants>
+    <DefineConstants>_USE_SYSTEM_DRAWING</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
     <ExternalConsole>true</ExternalConsole>
@@ -43,13 +45,6 @@
     <Compile Include="PreparedTriangle.cs" />
     <Compile Include="TriangleMap.cs" />
     <Compile Include="MeshGenerator.cs" />
-    <Compile Include="Helper.cs" />
-    <Compile Include="Array3D.cs" />
-    <Compile Include="Array2D.cs" />
-    <Compile Include="Helper.Unigine.cs" />
-    <Compile Include="Helper.Assimp.cs" />
-    <Compile Include="Helper.Umesh.cs" />
-    <Compile Include="Helper.Utils.cs" />
     <Compile Include="SdfTool\CellProcessor.cs" />
     <Compile Include="SdfTool\Vector3i.cs" />
     <Compile Include="SdfTool\Vector4i.cs" />
@@ -57,10 +52,20 @@
     <Compile Include="SdfTool\Vector3e.cs" />
     <Compile Include="SdfTool\Vector4e.cs" />
     <Compile Include="SdfTool\HalfFloat.cs" />
+    <Compile Include="Utils\Unigine.cs" />
+    <Compile Include="Utils\Umesh.cs" />
+    <Compile Include="Utils\Assimp.cs" />
+    <Compile Include="Utils\Ktx.cs" />
+    <Compile Include="Utils\Obj.cs" />
+    <Compile Include="Utils\Utils.cs" />
+    <Compile Include="Utils\Array2D.cs" />
+    <Compile Include="Utils\Array3D.cs" />
+    <Compile Include="Utils\Bitmap.cs" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Properties\" />
     <Folder Include="SdfTool\" />
+    <Folder Include="Utils\" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\..\Projects.3rd\assimpnet\AssimpNet\AssimpNet.csproj">

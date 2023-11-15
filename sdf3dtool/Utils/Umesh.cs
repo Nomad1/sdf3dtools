@@ -1,12 +1,10 @@
 ﻿using System;
-using SDFTool;
 using System.IO;
 using System.Collections.Generic;
 using Assimp;
-using System.Numerics;
 using System.Text;
 
-namespace SDFTool
+namespace SDFTool.Utils
 {
     public static class BinaryWriterExt
     {
@@ -42,7 +40,7 @@ namespace SDFTool
         }
     }
 
-    public partial class Helper
+    public class Umesh
     {
         public static int Signature = (int)(('u' | ('m' << 8) | ('0' << 16) | ('3' << 24)));
       
@@ -50,7 +48,7 @@ namespace SDFTool
         /// Saves a mesh to custom .umesh format
         /// </summary>
         /// <param name="outFile"></param>
-        public static void SaveUMesh(MeshGenerator.Surface[] surfaces, string outFile, ValueTuple<string, Bone>[][] bones = null, IList<Animation> animations = null, Scene oldScene = null, Assimp.Matrix4x4 matrix = default)
+        public static void SaveUMesh(MeshGenerator.Surface[] surfaces, string outFile, ValueTuple<string, Bone>[][] bones = null, IList<Animation> animations = null, Scene oldScene = null, Matrix4x4 matrix = default)
         {
             string file = Path.GetFileNameWithoutExtension(outFile) + ".umesh";
 
@@ -69,7 +67,7 @@ namespace SDFTool
 
                     {
                         Vector3D scaling;
-                        Assimp.Quaternion rotation;
+                        Quaternion rotation;
                         Vector3D translation;
                         matrix.Decompose(out scaling, out rotation, out translation);
 
@@ -154,7 +152,7 @@ namespace SDFTool
                                 writer.Write(surface.Faces[i][j]);
                     }
 
-                    Assimp.Matrix4x4 rootTransform = Assimp.Matrix4x4.Identity;
+                    Matrix4x4 rootTransform = Matrix4x4.Identity;
 
                     if (bones != null)
                     {
@@ -216,7 +214,7 @@ namespace SDFTool
                                 }
                             }
 
-                            Assimp.Matrix4x4 transform = boneNode == null ? Assimp.Matrix4x4.Identity : boneNode.Transform;
+                            Matrix4x4 transform = boneNode == null ? Matrix4x4.Identity : boneNode.Transform;
 
                             if (!parentFound)
                             {
@@ -237,7 +235,7 @@ namespace SDFTool
                             }
 
                             Vector3D scaling;
-                            Assimp.Quaternion rotation;
+                            Quaternion rotation;
                             Vector3D translation;
 
                             //Assimp.Matrix4x4 transform = //bname == oldScene.RootNode.Name ? matrix :
@@ -321,23 +319,23 @@ namespace SDFTool
 
 
                                     int keys = channel.PositionKeys.Count;
-                                    ValueTuple<Vector3D, Assimp.Quaternion, Vector3D>[] newKeys = new ValueTuple<Vector3D, Assimp.Quaternion, Vector3D>[keys];
+                                    ValueTuple<Vector3D, Quaternion, Vector3D>[] newKeys = new ValueTuple<Vector3D, Quaternion, Vector3D>[keys];
 
                                     for (int i = 0; i < keys; i++)
                                     {
-                                        Assimp.Matrix4x4 transform =
+                                        Matrix4x4 transform =
                                             //rootTransform *
-                                            new Assimp.Matrix4x4(channel.RotationKeys[i].Value.GetMatrix()) *
-                                            Assimp.Matrix4x4.FromTranslation(channel.PositionKeys[i].Value) *
-                                            Assimp.Matrix4x4.FromScaling(channel.ScalingKeys[i].Value);
+                                            new Matrix4x4(channel.RotationKeys[i].Value.GetMatrix()) *
+                                            Matrix4x4.FromTranslation(channel.PositionKeys[i].Value) *
+                                            Matrix4x4.FromScaling(channel.ScalingKeys[i].Value);
                                         //    ;
                                         Vector3D scaling;
-                                        Assimp.Quaternion rotation;
+                                        Quaternion rotation;
                                         Vector3D translation;
 
                                         transform.Decompose(out scaling, out rotation, out translation);
 
-                                        newKeys[i] = new ValueTuple<Vector3D, Assimp.Quaternion, Vector3D>(translation, rotation, scaling);
+                                        newKeys[i] = new ValueTuple<Vector3D, Quaternion, Vector3D>(translation, rotation, scaling);
                                         //newKeys[i] = new ValueTuple<Vector3D, Assimp.Quaternion, Vector3D>(channel.PositionKeys[i].Value, channel.RotationKeys[i].Value, channel.ScalingKeys[i].Value);
                                     }
 

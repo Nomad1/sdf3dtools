@@ -2,18 +2,12 @@
 using System.IO;
 using System.Diagnostics;
 
-#if USE_SYSTEM_DRAWING
-using System.Drawing;
-using System.Drawing.Imaging;
-using System.Runtime.InteropServices;
-#endif
-
-namespace SDFTool
+namespace SDFTool.Utils
 {
     /// <summary>
     /// Set of helpers to save data to temporary bitmap or mesh formats
     /// </summary>
-    public partial class Helper
+    public class Ktx
     {
         public const int KTX_RGBA16F = 0x881A;
         public const int KTX_RGBA16 = 0x805B;
@@ -36,7 +30,7 @@ namespace SDFTool
             for (int i = 0; i < arrays.Length; i++)
                 data[i] = arrays[i].Data;
 
-            Helper.SaveKTX(format, arrays[0].Width, arrays[0].Height, arrays[0].Depth, data, Path.GetFileNameWithoutExtension(outFile) + extension);
+            SaveKTX(format, arrays[0].Width, arrays[0].Height, arrays[0].Depth, data, Path.GetFileNameWithoutExtension(outFile) + extension);
         }
 
         public static void SaveKTX(int format, Array3D<ushort>[] arrays, string outFile, string extension)
@@ -45,7 +39,7 @@ namespace SDFTool
             for (int i = 0; i < arrays.Length; i++)
                 data[i] = arrays[i].Data;
 
-            Helper.SaveKTX(format, arrays[0].Width, arrays[0].Height, arrays[0].Depth, data, Path.GetFileNameWithoutExtension(outFile) + extension);
+            SaveKTX(format, arrays[0].Width, arrays[0].Height, arrays[0].Depth, data, Path.GetFileNameWithoutExtension(outFile) + extension);
         }
 
         public static void SaveKTX(int format, Array3D<byte>[] arrays, string outFile, string extension)
@@ -54,59 +48,29 @@ namespace SDFTool
             for (int i = 0; i < arrays.Length; i++)
                 data[i] = arrays[i].Data;
 
-            Helper.SaveKTX(format, arrays[0].Width, arrays[0].Height, arrays[0].Depth, data, Path.GetFileNameWithoutExtension(outFile) + extension);
+            SaveKTX(format, arrays[0].Width, arrays[0].Height, arrays[0].Depth, data, Path.GetFileNameWithoutExtension(outFile) + extension);
         }
 
         public static void SaveKTX(int format, Array3D<ushort> array3d, string outFile, string extension)
         {
-            Helper.SaveKTX(format, array3d.Width, array3d.Height, array3d.Depth, new ushort[][] { array3d.Data }, Path.GetFileNameWithoutExtension(outFile) + extension);
+            SaveKTX(format, array3d.Width, array3d.Height, array3d.Depth, new ushort[][] { array3d.Data }, Path.GetFileNameWithoutExtension(outFile) + extension);
         }
 
         public static void SaveKTX(int format, Array3D<byte> array3d, string outFile, string extension)
         {
-            Helper.SaveKTX(format, array3d.Width, array3d.Height, array3d.Depth, new byte[][] { array3d.Data }, Path.GetFileNameWithoutExtension(outFile) + extension);
+            SaveKTX(format, array3d.Width, array3d.Height, array3d.Depth, new byte[][] { array3d.Data }, Path.GetFileNameWithoutExtension(outFile) + extension);
         }
 
         public static void SaveKTX(int format, Array2D<ushort> array2d, string outFile, string extension)
         {
-            Helper.SaveKTX(format, array2d.Width, array2d.Height, 0, new ushort[][] { array2d.Data }, Path.GetFileNameWithoutExtension(outFile) + extension);
+            SaveKTX(format, array2d.Width, array2d.Height, 0, new ushort[][] { array2d.Data }, Path.GetFileNameWithoutExtension(outFile) + extension);
         }
 
         public static void SaveKTX(int format, Array2D<byte> array2d, string outFile, string extension)
         {
-            Helper.SaveKTX(format, array2d.Width, array2d.Height, 0, new byte[][] { array2d.Data }, Path.GetFileNameWithoutExtension(outFile) + extension);
+            SaveKTX(format, array2d.Width, array2d.Height, 0, new byte[][] { array2d.Data }, Path.GetFileNameWithoutExtension(outFile) + extension);
         }
 
-        public static Array2D<T> Array3Dto2D<T>(Array3D<T> array3d, int blockSize) where T : struct
-        {
-            Debug.Assert(array3d.Depth == blockSize);
-
-            Array2D<T> array2d = new Array2D<T>(array3d.Components, array3d.Width * blockSize, array3d.Height);
-
-            for (int nz = 0; nz < array3d.Depth; nz += blockSize)
-            {
-                for (int ny = 0; ny < array3d.Height; ny += blockSize)
-                {
-                    for (int nx = 0; nx < array3d.Width; nx += blockSize)
-                    {
-
-                        for (int z = 0; z < blockSize; z++)
-                        {
-                            for (int y = 0; y < blockSize; y++)
-                            {
-                                for (int x = 0; x < blockSize; x++)
-                                {
-                                    for (int c = 0; c < array3d.Components; c++)
-                                        array2d[(nx + z) * blockSize + x, ny + y, c] = array3d[nx + x, ny + y, nz + z, c];
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            return array2d;
-        }
 
         /// <summary>
         /// Saves a 3d texture to KTX format with each pixel being a set of 4 ushort values
@@ -291,120 +255,6 @@ namespace SDFTool
                 }
             }
         }
-
-        /// <summary>
-        /// Save bitmap to 3-component PPM file
-        /// </summary>
-        /// <param name="data"></param>
-        /// <param name="imageWidth"></param>
-        /// <param name="imageHeight"></param>
-        /// <param name="outFile"></param>
-        public static void SaveBitmap(byte[] data, int imageWidth, int imageHeight, string outFile)
-        {
-            string file = Path.GetFileNameWithoutExtension(outFile) + ".ppm";
-            Console.WriteLine("Converting data to PPM bitmap {0}", file);
-            using (FileStream stream = File.Open(file, FileMode.Create, FileAccess.Write, FileShare.None))
-            using (StreamWriter writer = new StreamWriter(stream))
-            {
-                writer.WriteLine("P3");
-                writer.WriteLine("{0} {1}", imageWidth, imageHeight);
-                writer.WriteLine("255");
-
-                for (int y = 0; y < imageHeight; y++)
-                {
-                    for (int x = 0; x < imageWidth; x++)
-                    {
-                        byte rvalue = data[(x + y * imageWidth) * 4 + 0];
-                        byte gvalue = data[(x + y * imageWidth) * 4 + 1];
-                        byte bvalue = data[(x + y * imageWidth) * 4 + 2];
-
-                        writer.Write(rvalue);
-                        writer.Write(' ');
-                        writer.Write(gvalue);
-                        writer.Write(' ');
-                        writer.Write(bvalue);
-                        writer.Write(' ');
-                    }
-                    writer.WriteLine();
-                }
-            }
-        }
-
-
-        /// <summary>
-        /// Saves a mesh to .obj format
-        /// </summary>
-        /// <param name="outFile"></param>
-        public static void SaveObjMesh(MeshGenerator.Surface[] surfaces, string outFile)
-        {
-            string file = Path.GetFileNameWithoutExtension(outFile) + ".obj";
-
-            using (Stream stream = File.Open(file, FileMode.Create, FileAccess.Write, FileShare.None))
-            using (StreamWriter writer = new StreamWriter(stream))
-            {
-                writer.WriteLine("# OBJ export for {0} surfaces", surfaces.Length);
-
-                foreach (MeshGenerator.Surface surface in surfaces)
-                {
-                    writer.WriteLine("o {0}", surface.Name);
-
-                    for (int i = 0; i < surface.Vertices.Count; i++)
-                        writer.WriteLine("v {0} {1} {2}", surface.Vertices[i].X, surface.Vertices[i].Y, surface.Vertices[i].Z);
-
-                    for (int i = 0; i < surface.Normals.Count; i++)
-                        writer.WriteLine("vn {0} {1} {2}", surface.Normals[i].X, surface.Normals[i].Y, surface.Normals[i].Z);
-
-                    for (int i = 0; i < surface.TexCoords.Count; i++)
-                    {
-                        writer.Write("vt ");
-                        for (int j = 0; j < surface.TexCoords[i].Length; j++)
-                        {
-                            writer.Write(surface.TexCoords[i][j]);
-                            writer.Write(' ');
-                        }
-                        writer.WriteLine();
-                    }
-
-                    for (int i = 0; i < surface.Faces.Count; i++)
-                    {
-                        writer.Write("f");
-                        for (int j = 0; j < surface.Faces[i].Length; j++)
-                            writer.Write(" {0}/{0}/{0}", surface.Faces[i][j] + 1);
-                        writer.WriteLine();
-                    }
-                }
-            }
-        }
-
-#if USE_SYSTEM_DRAWING
-        public static int[] LoadBitmap(string file, out int width, out int height)
-        {
-            int[] buffer;
-            using (Bitmap image = new Bitmap(file))
-            {
-
-                width = image.Width;
-                height = image.Height;
-
-                BitmapData bitmapdata = image.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
-
-                buffer = new int[bitmapdata.Width * bitmapdata.Height];
-
-                Marshal.Copy(bitmapdata.Scan0, buffer, 0, buffer.Length);
-
-                image.UnlockBits(bitmapdata);
-
-                image.Dispose();
-            }
-
-            return buffer;
-        }
-#else
-        public static int[] LoadBitmap(string file, out int width, out int height)
-        {
-            throw new NotImplementedException();
-        }
-#endif
     }
 }
 

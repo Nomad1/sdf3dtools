@@ -1,10 +1,9 @@
 ﻿using System;
-using SDFTool;
 using System.IO;
 
-namespace SDFTool
+namespace SDFTool.Utils
 {
-    public partial class Helper
+    public class Unigine
     {
         /// <summary>
         /// Saves a mesh to Unigine .mesh format

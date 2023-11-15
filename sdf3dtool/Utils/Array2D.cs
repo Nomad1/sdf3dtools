@@ -2,7 +2,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
-namespace SDFTool
+namespace SDFTool.Utils
 {
     public struct Array2D<T> where T : struct
     {

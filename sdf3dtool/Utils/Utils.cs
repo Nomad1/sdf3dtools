@@ -1,12 +1,13 @@
 ﻿using System;
+using System.Diagnostics;
 using RunServer.SdfTool;
 
-namespace SDFTool
+namespace SDFTool.Utils
 {
     /// <summary>
     /// Set of helpers to save data to temporary bitmap or mesh formats
     /// </summary>
-    public partial class Helper
+    public class Utils
     {
         public static float Clamp(float value, float min, float max)
         {
@@ -131,6 +132,38 @@ namespace SDFTool
                     }
                 }
             }
+        }
+
+
+        public static Array2D<T> Array3Dto2D<T>(Array3D<T> array3d, int blockSize) where T : struct
+        {
+            Debug.Assert(array3d.Depth == blockSize);
+
+            Array2D<T> array2d = new Array2D<T>(array3d.Components, array3d.Width * blockSize, array3d.Height);
+
+            for (int nz = 0; nz < array3d.Depth; nz += blockSize)
+            {
+                for (int ny = 0; ny < array3d.Height; ny += blockSize)
+                {
+                    for (int nx = 0; nx < array3d.Width; nx += blockSize)
+                    {
+
+                        for (int z = 0; z < blockSize; z++)
+                        {
+                            for (int y = 0; y < blockSize; y++)
+                            {
+                                for (int x = 0; x < blockSize; x++)
+                                {
+                                    for (int c = 0; c < array3d.Components; c++)
+                                        array2d[(nx + z) * blockSize + x, ny + y, c] = array3d[nx + x, ny + y, nz + z, c];
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            return array2d;
         }
     }
 }
