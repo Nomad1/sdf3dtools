@@ -26,7 +26,7 @@ namespace SDFTool
             )
         {
 
-            CellProcessor.LodData [] lodData;
+            CellProcessor.LodData[] lodData;
 
 #if SINGLE_LOD
             lodData = new CellProcessor.LodData[1];
@@ -36,79 +36,90 @@ namespace SDFTool
             CellProcessor.ProcessBricksWithLods(data, 4, out lodData);
 #endif
 
+            for (int l = 0; l < lodData.Length; l++)
+            {
+                Console.WriteLine("[{0}] Saving LOD {1}: size {2}", sw.Elapsed, l, lodData[l].Size);
+
 #if LOD2_16BIT
-            Array3D<ushort>[] lods = new Array3D<ushort>[1];
-            {
-                lods[0] = new Array3D<ushort>(1, lodData[0].Size.X, lodData[0].Size.Y, lodData[0].Size.Z);
-                for (int j = 0; j < lodData[0].Distances.Length; j++)
-                    lods[0][j] = Utils.Utils.PackFloatToUShort(lodData[0].Distances[j]);
-            }
+                Array3D<ushort>[] lods = new Array3D<ushort>[1];
+                {
+                    lods[0] = new Array3D<ushort>(1, lodData[l].Size.X, lodData[l].Size.Y, lodData[l].Size.Z);
+                    for (int j = 0; j < lodData[l].Distances.Length; j++)
+                        lods[0][j] = Utils.Utils.PackFloatToUShort(lodData[l].Distances[j]);
+                }
 #else
-            Array3D<float>[] lods = new Array3D<float>[1];
-            {
-                lods[0] = new Array3D<float>(1, topLodTextureSize.X, topLodTextureSize.Y, topLodTextureSize.Z);
-                for (int j = 0; j < alods.Length; j++)
-                    lods[0][j] = alods[j];
-            }
+                Array3D<float>[] lods = new Array3D<float>[1];
+                {
+                    lods[0] = new Array3D<float>(1, topLodTextureSize.X, topLodTextureSize.Y, topLodTextureSize.Z);
+                    for (int j = 0; j < alods.Length; j++)
+                        lods[0][j] = alods[j];
+                }
 #endif
 
-            Array3D<ushort> uv = new Array3D<ushort>(2, lodData[0].Size.X, lodData[0].Size.Y, lodData[0].Size.Z);
-            for (int j = 0; j < lodData[0].UV.Length; j++)
-            {
-                uv[j * 2 + 0] = Utils.Utils.PackFloatToUShort(lodData[0].UV[j].X);
-                uv[j * 2 + 1] = Utils.Utils.PackFloatToUShort(lodData[0].UV[j].Y);
-            }
-
-            MeshGenerator.Shape[] boxes = new MeshGenerator.Shape[lodData[0].Bricks.Length];
-
-            for (int i = 0; i < boxes.Length; i++)
-            {
-                boxes[i] = new MeshGenerator.Shape(
-                    System.Numerics.Matrix4x4.CreateScale(lodData[0].Bricks[i].Size) * System.Numerics.Matrix4x4.CreateTranslation(lodData[0].Bricks[i].Position),
-                    System.Numerics.Matrix4x4.Identity,
-                    MeshGenerator.ShapeType.Cube,
-                    MeshGenerator.ShapeFlags.NoNormals,
-                    new float[] {
-                        lodData[0].Bricks[i].BrickId
-                    });
-
-                boxes[i].SetCubeVertexData(lodData[0].Bricks[i].VertexDistances, lodData[0].Bricks[i].BoneWeights);
-            }
-
-            Array3D<byte>[] children = new Array3D<byte>[1];
-            {
-                int childrenBlock = 4 * 4 * 4;
-                children[0] = new Array3D<byte>(childrenBlock, lodData[0].ChildrenSize.X, lodData[0].ChildrenSize.Y, lodData[0].ChildrenSize.Z);
-
-                for (int j = 0; j < lodData[0].Children.Length; j++)
-                {   
-                    children[0][j * 4 + 0] = (byte)(lodData[0].Children[j]);
-                    children[0][j * 4 + 1] = (byte)(lodData[0].Children[j] >> 8);
-                    children[0][j * 4 + 2] = (byte)(lodData[0].Children[j] >> 16);
-                    children[0][j * 4 + 3] = 0;
+                Array3D<ushort> uv = new Array3D<ushort>(2, lodData[l].Size.X, lodData[l].Size.Y, lodData[l].Size.Z);
+                for (int j = 0; j < lodData[l].UV.Length; j++)
+                {
+                    uv[j * 2 + 0] = Utils.Utils.PackFloatToUShort(lodData[l].UV[j].X);
+                    uv[j * 2 + 1] = Utils.Utils.PackFloatToUShort(lodData[l].UV[j].Y);
                 }
-            }
+
+                MeshGenerator.Shape[] boxes = new MeshGenerator.Shape[lodData[l].Bricks.Length];
+
+                for (int i = 0; i < boxes.Length; i++)
+                {
+                    boxes[i] = new MeshGenerator.Shape(
+                        System.Numerics.Matrix4x4.CreateScale(lodData[l].Bricks[i].Size) * System.Numerics.Matrix4x4.CreateTranslation(lodData[l].Bricks[i].Position),
+                        System.Numerics.Matrix4x4.Identity,
+                        MeshGenerator.ShapeType.Cube,
+                        MeshGenerator.ShapeFlags.NoNormals,
+                        new float[] {
+                        lodData[l].Bricks[i].BrickId
+                        });
+
+                    boxes[i].SetCubeVertexData(lodData[l].Bricks[i].VertexDistances, lodData[l].Bricks[i].BoneWeights);
+                }
+
+                Array3D<byte>[] children = null;
+
+                if (l != lodData.Length - 1)
+                {
+                    children = new Array3D<byte>[1];
+                    {
+                        int childrenBlock = 4 * 4 * 4;
+                        children[0] = new Array3D<byte>(childrenBlock, lodData[l].ChildrenSize.X, lodData[l].ChildrenSize.Y, lodData[l].ChildrenSize.Z);
+
+                        for (int j = 0; j < lodData[l].Children.Length; j++)
+                        {
+                            children[0][j * 4 + 0] = (byte)(lodData[l].Children[j]);
+                            children[0][j * 4 + 1] = (byte)(lodData[l].Children[j] >> 8);
+                            children[0][j * 4 + 2] = (byte)(lodData[l].Children[j] >> 16);
+                            children[0][j * 4 + 3] = 0;
+                        }
+                    }
+                }
 
 
-            Console.WriteLine("[{0}] Saving LODs", sw.Elapsed);
+                Console.WriteLine("[{0}] Saving textures", sw.Elapsed);
 
 #if LOD2_8BIT
-            Ktx.SaveKTX(Ktx.KTX_R8, lodDistance, outFile, "_lod.3d.ktx");
+                Ktx.SaveKTX(Ktx.KTX_R8, lods, outFile, "_lod_" + l + ".3d.ktx");
 #elif LOD2_16BIT
-            Ktx.SaveKTX(Ktx.KTX_R16F, lods, outFile, "_lod.3d.ktx");
+                Ktx.SaveKTX(Ktx.KTX_R16F, lods, outFile, "_lod_" + l + ".3d.ktx");
 #else
-            Ktx.SaveKTX(Ktx.KTX_R32F, lods, outFile, "_lod.3d.ktx");
+                Ktx.SaveKTX(Ktx.KTX_R32F, lods, outFile, "_lod_" + l + ".3d.ktx");
 #endif
 
-            Ktx.SaveKTX(Ktx.KTX_RG16F, uv, outFile, "_lod_2_uv.3d.ktx");
+                Ktx.SaveKTX(Ktx.KTX_RG16F, uv, outFile, "_lod_" + l + "_uv.3d.ktx");
 
-            Ktx.SaveKTX(Ktx.KTX_RGBA8, children, outFile, "_lod_children.3d.ktx");
+                if (children != null)
+                    Ktx.SaveKTX(Ktx.KTX_RGBA8, children, outFile, "_lod_" + l + "_children.3d.ktx");
 
-            Console.WriteLine("[{0}] KTX saved, saving boundary mesh", sw.Elapsed);
-            MeshGenerator.Surface[] boxesSurface = new MeshGenerator.Surface[] { MeshGenerator.CreateBoxesMesh(boxes, "main_box") };
-            //Helper.SaveAssimpMesh(boxesSurface, outFile, new[] { bones }, scene.Animations, scene);
+                Console.WriteLine("[{0}] KTX saved, saving boundary mesh", sw.Elapsed);
+                MeshGenerator.Surface[] boxesSurface = new MeshGenerator.Surface[] { MeshGenerator.CreateBoxesMesh(boxes, "main_box") };
+                //Helper.SaveAssimpMesh(boxesSurface, outFile, new[] { bones }, scene.Animations, scene);
 
-            Umesh.SaveUMesh(boxesSurface, outFile, bones, scene == null ? null : scene.Animations, scene, matrix);
+                Umesh.SaveUMesh(boxesSurface, Path.GetFileNameWithoutExtension(outFile) + "_lod_" + l, bones, scene == null ? null : scene.Animations, scene, matrix);
+            }
         }
 
         static void Main(string[] args)

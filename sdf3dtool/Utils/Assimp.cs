@@ -531,7 +531,7 @@ namespace SDFTool.Utils
             Console.WriteLine("[{0}] File preprocessed. X: {1}, Y: {2}, Z: {3}, maximum distance: {4}", sw.Elapsed, sx, sy, sz, maxSide);
 
             int maxcount = sz * sy * sx;
-
+                
             float[] distanceData = new float[maxcount * 4];
 
             // Use TriangleMap to generate raw SDF grid

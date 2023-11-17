@@ -685,7 +685,7 @@ namespace RunServer.SdfTool
                 {
                     BrickData brick = resultBricks[lod][i];
 
-                    PixelData[] pixelData = brick.CellSize == baseCellSize ? brick.Data : GenerateLod(brick.Data, brick.CellSize, paddedTopLodCellSize);
+                    PixelData[] pixelData = brick.CellSize == baseCellSize ? brick.Data : GenerateLod(brick.Data, brick.CellSize + 1, paddedTopLodCellSize);
 
                     int atlasZ = ((i / pxy));
                     int atlasY = ((i % pxy) / pack.X);
@@ -701,10 +701,10 @@ namespace RunServer.SdfTool
 
                                 PixelData pixel = GetArrayData(pixelData, blockSize, coord);
 
-                                // higher LOD
+                                // distance in X coord
                                 SetArrayData(lodDistances, pixel.DistanceUV.X * data.CellSize / brick.CellSize, lodTextureSize, blockStart + coord);
 
-                                // texture UV coords
+                                // texture UV coords in YZ
                                 SetArrayData(lodUv, new Vector2(pixel.DistanceUV.Y, pixel.DistanceUV.Z), lodTextureSize, blockStart + coord);
 
                             }
