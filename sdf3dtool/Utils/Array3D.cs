@@ -43,7 +43,7 @@ namespace SDFTool.Utils
             get { return m_data; }
         }
 
-        public T this[int x, int y, int z, int c]
+        public T this[int x, int y, int z, int c = 0]
         {
             get
             {
@@ -74,6 +74,15 @@ namespace SDFTool.Utils
             m_depth = depth;
             m_components = components;
             m_data = new T[components * width * height * depth];
+        }
+
+        public Array3D(T [] data, int width, int height, int depth)
+        {
+            m_width = width;
+            m_height = height;
+            m_depth = depth;
+            m_components = 1;
+            m_data = data;
         }
 
         public bool IsValidCoord(int x, int y, int z)

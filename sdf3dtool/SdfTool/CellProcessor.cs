@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Drawing;
 
 #if UNITY_EDITOR
 using Vector2 = RunServer.SdfTool.Vector2e;
@@ -43,9 +44,11 @@ namespace RunServer.SdfTool
         }
     }
 
+   
     public static class CellProcessor
     {
-        public struct BrickData
+        // to return data
+        public struct BrickCellData
         {
             public readonly Vector3 Position;
             public readonly Vector3 Size;
@@ -53,7 +56,7 @@ namespace RunServer.SdfTool
             public readonly ValueTuple<int, float>[][] BoneWeights;
             public readonly float[][] VertexDistances;
 
-            public BrickData(int id, Vector3 position, Vector3 size, ValueTuple<int, float>[][] weights, float[][] distances)
+            public BrickCellData(int id, Vector3 position, Vector3 size, ValueTuple<int, float>[][] weights, float[][] distances)
             {
                 Position = position;
                 BrickId = id;
@@ -63,8 +66,46 @@ namespace RunServer.SdfTool
             }
         }
 
+        // for internal processing
+        private struct BrickData
+        {
+            public readonly Vector3i Position;
+            public readonly int CellSize;
+            public readonly PixelData[] Data;
+            public readonly int[] Children;
+
+            public BrickData(Vector3i position, int cellSize, PixelData[] data, int [] children = null)
+            {
+                CellSize = cellSize;
+                Data = data;
+                Position = position;
+                Children = children;
+            }
+        }
+
+        public struct LodData
+        {
+            public readonly Vector3i Size;
+            public readonly float[] Distances;
+            public readonly Vector2[] UV;
+            public readonly BrickCellData[] Bricks;
+            public readonly int[] Children;
+            public readonly Vector3i ChildrenSize;
+
+            public LodData(Vector3i size, float[] distances, Vector2 [] uv, BrickCellData [] bricks, int[] children, Vector3i childrenSize)
+            {
+                Size = size;
+                Distances = distances;
+                UV = uv;
+                Bricks = bricks;
+                Children = children;
+                ChildrenSize = childrenSize;
+            }
+        }
+
+
         /// <summary>
-        /// Splits SDF pixel data to bricks
+        /// Splits SDF pixel data to uniform bricks
         /// </summary>
         /// <param name="data">input data</param>
         /// <param name="dataSize">data size</param>
@@ -85,7 +126,7 @@ namespace RunServer.SdfTool
             out float[][] distanceLods,
             out Vector2[] topLoduv,
             out Vector4[] zeroLodData,
-            IList<BrickData> boxes)
+            IList<BrickCellData> boxes)
         {
             Dictionary<Vector3i, ValueTuple<int, float>[]> weightCache = new Dictionary<Vector3i, ValueTuple<int, float>[]>();
 
@@ -212,7 +253,7 @@ namespace RunServer.SdfTool
 
                             float[][] vertexDistances = GetCubeDistances(data.Data, data.Size, dataStart, data.CellSize);
 
-                            boxes.Add(new BrickData(brickId, data.LowerBound + new Vector3(ix, iy, iz) * boxStep, boxStep, boxBones, vertexDistances));
+                            boxes.Add(new BrickCellData(brickId, data.LowerBound + new Vector3(ix, iy, iz) * boxStep, boxStep, boxBones, vertexDistances));
                         }
 
 
@@ -222,14 +263,21 @@ namespace RunServer.SdfTool
             return usedCells;
         }
 
+        /// <summary>
+        /// Splits SDF data to non uniform bricks with sizes data.CellSize and it's multiplies of 2
+        /// </summary>
+        /// <param name="data"></param>
+        /// <param name="topLodTextureSize"></param>
+        /// <param name="topLodDistances"></param>
+        /// <param name="topLoduv"></param>
+        /// <param name="boxes"></param>
+        /// <param name="targetPsnr"></param>
+        /// <returns></returns>
         public static int ProcessBricks(
             DistanceData data,
-
-            out Vector3i topLodTextureSize,
-            out float[] topLodDistances,
-            out Vector2[] topLoduv,
-            IList<BrickData> boxes,
-            float targetPsnr)
+            float targetPsnr,
+            out LodData topLod
+            )
         {
             Dictionary<Vector3i, ValueTuple<int, float>[]> weightCache = new Dictionary<Vector3i, ValueTuple<int, float>[]>();
 
@@ -243,7 +291,7 @@ namespace RunServer.SdfTool
 
             //DebugLog("Used cells: {0}, cellsx: {1}, cellsy: {2}, cellsz: {3}, blockSize: {4}", usedCells, cellsx, cellsy, cellsz, paddedTopLodCellSize);
 
-            List<ValueTuple<Vector3i, int, PixelData[]>> bricks = new List<ValueTuple<Vector3i, int, PixelData[]>>();
+            List<BrickData> bricks = new List<BrickData>();
             FindBricks(data.Data, data.Size, data.CellSize, targetPsnr, bricks);
 
             int packx;
@@ -251,19 +299,21 @@ namespace RunServer.SdfTool
             int packz;
             FindBestDividers(bricks.Count, out packx, out packy, out packz, 256);
 
-            topLodTextureSize = new Vector3i(packx * paddedTopLodCellSize, packy * paddedTopLodCellSize, packz * paddedTopLodCellSize);
+            Vector3i topLodTextureSize = new Vector3i(packx, packy, packz) * paddedTopLodCellSize;
 
-            topLodDistances = new float[packx * paddedTopLodCellSize * packy * paddedTopLodCellSize * packz * paddedTopLodCellSize];
+            float [] topLodDistances = new float[topLodTextureSize.X * topLodTextureSize.Y * topLodTextureSize.Z];
 
-            topLoduv = new Vector2[packx * paddedTopLodCellSize * packy * paddedTopLodCellSize * packz * paddedTopLodCellSize];
+            Vector2 [] topLoduv = new Vector2[packx * paddedTopLodCellSize * packy * paddedTopLodCellSize * packz * paddedTopLodCellSize];
 
             Vector3 boxStep = (data.UpperBound - data.LowerBound) / new Vector3(cellsx, cellsy, cellsz);
+
+            BrickCellData[] boxes = new BrickCellData[bricks.Count];
 
             int pxy = packx * packy;
 
             for (int i = 0; i < bricks.Count; i++)
             {
-                ValueTuple<Vector3i, int, PixelData[]> brick = bricks[i];
+                BrickData brick = bricks[i];
 
                 int atlasZ = ((i / pxy));
                 int atlasY = ((i % pxy) / packx);
@@ -277,25 +327,34 @@ namespace RunServer.SdfTool
                         {
                             Vector3i coord = new Vector3i(x, y, z);
 
-                            PixelData pixel = GetArrayData(brick.Item3, blockSize, coord);
+                            PixelData pixel = GetArrayData(brick.Data, blockSize, coord);
 
                             // higher LOD
-                            SetArrayData(topLodDistances, pixel.DistanceUV.X * data.CellSize / brick.Item2, topLodTextureSize, blockStart + coord);
+                            SetArrayData(topLodDistances, pixel.DistanceUV.X * data.CellSize / brick.CellSize, topLodTextureSize, blockStart + coord);
 
                             // texture UV coords
                             SetArrayData(topLoduv, new Vector2(pixel.DistanceUV.Y, pixel.DistanceUV.Z), topLodTextureSize, blockStart + coord);
                         }
 
                 //ValueTuple<int, float>[][] boxBones = GetBoxWeights(weightCache, brick.Item3, blockSize, new Vector3i(0,0,0), data.CellSize, brick.Item1 / data.CellSize);
-                ValueTuple<int, float>[][] boxBones = GetCubeWeights(weightCache, data.Data, data.Size, brick.Item1, data.CellSize, brick.Item1 / data.CellSize);
-                float[][] vertexDistances = GetCubeDistances(data.Data, data.Size, brick.Item1, data.CellSize);
+                ValueTuple<int, float>[][] boxBones = GetCubeWeights(weightCache, data.Data, data.Size, brick.Position, data.CellSize, brick.Position / data.CellSize);
+                float[][] vertexDistances = GetCubeDistances(data.Data, data.Size, brick.Position, data.CellSize);
 
-                boxes.Add(new BrickData(i, data.LowerBound + boxStep * new Vector3(brick.Item1.X, brick.Item1.Y, brick.Item1.Z) / data.CellSize, boxStep * brick.Item2 / data.CellSize, boxBones, vertexDistances));
+                boxes[i] = new BrickCellData(i, data.LowerBound + boxStep * new Vector3(brick.Position.X, brick.Position.Y, brick.Position.Z) / data.CellSize, boxStep * brick.CellSize / data.CellSize, boxBones, vertexDistances);
             }
 
+            topLod = new LodData(topLodTextureSize, topLodDistances, topLoduv, boxes, null, new Vector3i(0,0,0));
             return bricks.Count;
         }
 
+        /// <summary>
+        /// Marks cells where distance changes from negative to positive and vice versa
+        /// </summary>
+        /// <param name="data"></param>
+        /// <param name="dataSize"></param>
+        /// <param name="cellSize"></param>
+        /// <param name="cells"></param>
+        /// <returns>number of cells</returns>
         private static int CheckCells(PixelData[] data, Vector3i dataSize, int cellSize, float[] cells)
         {
             int usedCells = 0;
@@ -354,10 +413,18 @@ namespace RunServer.SdfTool
             return usedCells;
         }
 
+        /// <summary>
+        /// This method analyzes the pixel data and tries to find biggest possible bricks with some quality loss
+        /// </summary>
+        /// <param name="data"></param>
+        /// <param name="dataSize"></param>
+        /// <param name="minCellSize"></param>
+        /// <param name="minPsnr"></param>
+        /// <param name="cells"></param>
         private static void FindBricks(
             PixelData[] data, Vector3i dataSize,
             int minCellSize, float minPsnr,
-            IList<ValueTuple<Vector3i, int, PixelData[]>> cells)
+            IList<BrickData> cells)
         {
             int minCellsx = dataSize.X / minCellSize;
             int minCellsy = dataSize.Y / minCellSize;
@@ -515,7 +582,7 @@ namespace RunServer.SdfTool
 
                             // add result to `cells`
 
-                            cells.Add(new ValueTuple<Vector3i, int, PixelData[]>(dataStart, cellSize, brick));
+                            cells.Add(new BrickData(dataStart, cellSize, brick));
                             cellCount++;
                         }
                     }
@@ -527,6 +594,243 @@ namespace RunServer.SdfTool
                 cellSize /= 2;
             }
         }
+
+        public static int ProcessBricksWithLods(
+            DistanceData data,
+            int baseCellSize,
+
+            out LodData[] lods
+            )
+        {
+            Dictionary<Vector3i, ValueTuple<int, float>[]> weightCache = new Dictionary<Vector3i, ValueTuple<int, float>[]>();
+
+            int cellSize = data.CellSize;
+            if (cellSize != 4 && cellSize != 16 && cellSize != 256)
+            {
+                throw new Exception("Only cell size 4, 16 and 256 are supported at the moment!");
+            }
+
+            int cellsx = data.Size.X / baseCellSize;
+            int cellsy = data.Size.Y / baseCellSize;
+            int cellsz = data.Size.Z / baseCellSize;
+
+            int paddedTopLodCellSize = baseCellSize + 1;
+
+            Vector3i blockSize = new Vector3i(paddedTopLodCellSize, paddedTopLodCellSize, paddedTopLodCellSize);
+
+            //DebugLog("Used cells: {0}, cellsx: {1}, cellsy: {2}, cellsz: {3}, blockSize: {4}", usedCells, cellsx, cellsy, cellsz, paddedTopLodCellSize);
+
+            int lodLevels = 0;
+            int ncellSize = cellSize;
+            while (ncellSize >= baseCellSize)
+            {
+                ncellSize = (int)Math.Sqrt(ncellSize);
+                lodLevels++;
+            }
+
+            List<BrickData>[] resultBricks = new List<BrickData>[lodLevels];
+
+            // LOD 0
+            int[] lod0 = new int[cellsx * cellsy * cellsz];
+            resultBricks[0] = new List<BrickData>();
+            ncellSize = cellSize;
+
+            // lod 0 is added as is2z3zxv4cb5v68789m,,,,,,,,0.-/////////.0,9m.p8ionuobyi j  hf g f
+            FindFixedBricks(data.Data, data.Size, ncellSize, resultBricks[0], new Vector3i(0, 0, 0), lod0, new Vector3i(cellsx, cellsy, cellsz));
+
+            for (int lod = 1; lod < lodLevels; lod++)
+            {
+                resultBricks[lod] = new List<BrickData>();
+                ncellSize = (int)Math.Round(Math.Sqrt(ncellSize));
+
+                foreach (var brick in resultBricks[lod - 1])
+                {
+                    int index = resultBricks[lod].Count;
+
+                    FindFixedBricks(brick.Data, new Vector3i(brick.CellSize + 1, brick.CellSize + 1, brick.CellSize + 1), ncellSize,
+                        resultBricks[lod], brick.Position, brick.Children, new Vector3i(baseCellSize, baseCellSize, baseCellSize));
+                }
+            }
+
+            Vector3i[] packing = new Vector3i[lodLevels];
+            for (int lod = 0; lod < lodLevels; lod++)
+            {
+                int packx;
+                int packy;
+                int packz;
+                FindBestDividers(resultBricks[lod].Count, out packx, out packy, out packz, 256);
+                packing[lod] = new Vector3i(packx, packy, packz);
+            }
+
+            lods = new LodData[lodLevels];
+
+            for (int lod = 0; lod < lodLevels; lod++)
+            {
+                Vector3i pack = packing[lod];
+
+                Vector3i lodTextureSize = pack * paddedTopLodCellSize;
+                float[] lodDistances = new float[lodTextureSize.X * lodTextureSize.Y * lodTextureSize.Z];
+                Vector2[] lodUv = new Vector2[lodTextureSize.X * lodTextureSize.Y * lodTextureSize.Z];
+
+                Vector3i lodChildrenSize = pack * baseCellSize;
+                int[] lodChildren = new int[lodChildrenSize.X * lodChildrenSize.Y * lodChildrenSize.Z];
+
+                BrickCellData[] lodBoxes = new BrickCellData[resultBricks[lod].Count];
+
+                Vector3 boxStep = (data.UpperBound - data.LowerBound) / new Vector3(cellsx, cellsy, cellsz);
+
+                int pxy = pack.X * pack.Y;
+
+                for (int i = 0; i < resultBricks[lod].Count; i++)
+                {
+                    BrickData brick = resultBricks[lod][i];
+
+                    PixelData[] pixelData = brick.CellSize == baseCellSize ? brick.Data : GenerateLod(brick.Data, brick.CellSize, paddedTopLodCellSize);
+
+                    int atlasZ = ((i / pxy));
+                    int atlasY = ((i % pxy) / pack.X);
+                    int atlasX = ((i % pxy) % pack.X);
+
+                    Vector3i blockStart = new Vector3i(atlasX * paddedTopLodCellSize, atlasY * paddedTopLodCellSize, atlasZ * paddedTopLodCellSize);
+
+                    for (int z = 0; z < paddedTopLodCellSize; z++)
+                        for (int y = 0; y < paddedTopLodCellSize; y++)
+                            for (int x = 0; x < paddedTopLodCellSize; x++)
+                            {
+                                Vector3i coord = new Vector3i(x, y, z);
+
+                                PixelData pixel = GetArrayData(pixelData, blockSize, coord);
+
+                                // higher LOD
+                                SetArrayData(lodDistances, pixel.DistanceUV.X * data.CellSize / brick.CellSize, lodTextureSize, blockStart + coord);
+
+                                // texture UV coords
+                                SetArrayData(lodUv, new Vector2(pixel.DistanceUV.Y, pixel.DistanceUV.Z), lodTextureSize, blockStart + coord);
+
+                            }
+
+                    if (brick.Children != null && brick.Children.Length == (baseCellSize * baseCellSize * baseCellSize))
+                    {
+                        blockStart = new Vector3i(atlasX * baseCellSize, atlasY * baseCellSize, atlasZ * baseCellSize);
+
+                        for (int z = 0; z < baseCellSize; z++)
+                            for (int y = 0; y < baseCellSize; y++)
+                                for (int x = 0; x < baseCellSize; x++)
+                                {
+                                    Vector3i coord = new Vector3i(x, y, z);
+
+                                    int childData = GetArrayData(brick.Children, new Vector3i(baseCellSize, baseCellSize, baseCellSize), coord);
+                                    SetArrayData(lodChildren, childData, lodChildrenSize, blockStart + coord);
+                                }
+                    }
+
+                    //ValueTuple<int, float>[][] boxBones = GetBoxWeights(weightCache, brick.Item3, blockSize, new Vector3i(0,0,0), data.CellSize, brick.Item1 / data.CellSize);
+                    ValueTuple<int, float>[][] boxBones = GetCubeWeights(weightCache, data.Data, data.Size, brick.Position, data.CellSize, brick.Position / data.CellSize);
+                    float[][] vertexDistances = GetCubeDistances(data.Data, data.Size, brick.Position, data.CellSize);
+
+                    lodBoxes[i] = new BrickCellData(i, data.LowerBound + boxStep * new Vector3(brick.Position.X, brick.Position.Y, brick.Position.Z) / data.CellSize, boxStep * brick.CellSize / data.CellSize, boxBones, vertexDistances);
+                }
+
+                lods[lod] = new LodData(lodTextureSize, lodDistances, lodUv, lodBoxes, lodChildren, lodChildrenSize);
+            }
+
+            return lodLevels;
+        }
+
+        private static Vector3i Unpack(int i, Vector3i pack)
+        {
+            int pxy = pack.X * pack.Y;
+
+
+            int atlasZ = ((i / pxy));
+            int atlasY = ((i % pxy) / pack.X);
+            int atlasX = ((i % pxy) % pack.X);
+
+            return new Vector3i(atlasX, atlasY, atlasZ);
+        }
+
+        /// <summary>
+        /// We are taking array @data of size @dataSize and looking for cells of size @cellSize^3
+        /// If @targetArray is provided, it should be of size @cellsx*@cellsy*@cellsz and we put new cell index there
+        /// </summary>
+        /// <param name="data"></param>
+        /// <param name="dataSize"></param>
+        /// <param name="cellSize"></param>
+        /// <param name="cells"></param>
+        /// <param name="shift"></param>
+        /// <param name="targetArray"></param>
+        /// <returns></returns>
+        private static int FindFixedBricks(
+            PixelData[] data, Vector3i dataSize,
+            int cellSize,
+            IList<BrickData> cells, Vector3i shift,
+
+            int[] targetArray, Vector3i targetSize)
+        {
+            int cellsx = dataSize.X / cellSize;
+            int cellsy = dataSize.Y / cellSize;
+            int cellsz = dataSize.Z / cellSize;
+
+            Vector3i cellDimensions = new Vector3i(cellSize + 1, cellSize + 1, cellSize + 1);
+
+            int childCell = (int)Math.Round(Math.Sqrt(cellSize));
+
+            int cellCount = 0;
+
+            for (int iz = 0; iz < cellsz; iz++)
+            {
+                for (int iy = 0; iy < cellsy; iy++)
+                {
+                    for (int ix = 0; ix < cellsx; ix++)
+                    {
+                        Vector3i dataStart = new Vector3i(ix * cellSize, iy * cellSize, iz * cellSize);
+
+                        int countPositive = 0;
+                        int countNegative = 0;
+
+                        PixelData[] cellData = new PixelData[cellDimensions.X * cellDimensions.Y * cellDimensions.Z];
+
+                        for (int z = 0; z <= cellSize; z++)
+                            for (int y = 0; y <= cellSize; y++)
+                                for (int x = 0; x <= cellSize; x++)
+                                {
+                                    PixelData pixel = GetArrayData(data, dataSize, dataStart + new Vector3i(x, y, z));
+
+                                    float distance = pixel.DistanceUV.X;
+
+                                    if (distance > 0)
+                                        countPositive++;
+                                    else
+                                        if (distance < 0)
+                                        countNegative++;
+
+                                    SetArrayData(cellData, pixel, cellDimensions, new Vector3i(x, y, z));
+                                }
+
+                        if (countPositive == 0 || countNegative == 0) // all neg or all pos is ignored
+                        {
+                            continue;
+                        }
+
+                        PixelData[] brick = cellData;
+
+                        // add result to `cells`
+
+                        int index = cells.Count;
+
+                        if (targetArray != null)
+                        {
+                            SetArrayData(targetArray, index, targetSize, new Vector3i(ix, iy, iz));
+                        }
+
+                        cells.Add(new BrickData(dataStart + shift, cellSize, brick, new int[childCell * childCell * childCell]));
+                        cellCount++;
+                    }
+                }
+            }
+            return cellCount;
+        }
+
 
         #region Interpolation and LODs
 

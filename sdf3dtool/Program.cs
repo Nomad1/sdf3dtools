@@ -25,75 +25,23 @@ namespace SDFTool
             Assimp.Scene scene = null, ValueTuple<string, Assimp.Bone>[][] bones = null, Assimp.Matrix4x4 matrix = default(Assimp.Matrix4x4)
             )
         {
-            // Fill in data structure with SDF data and additional parameters from original model
-#if USE_LODS
-            int nlods = 0;
-            int lod = topLodCellSize;
 
-            while (lod >= 2 && lod % 2 == 0)
-            {
-                nlods++;
-                lod /= 2;
-            }
+            CellProcessor.LodData [] lodData;
+
+#if SINGLE_LOD
+            lodData = new CellProcessor.LodData[1];
+            CellProcessor.ProcessBricks(data, psnr, lodData[0]);
 #else
-            int numberOfLods = 1;
+            // find non-empty cells
+            CellProcessor.ProcessBricksWithLods(data, 4, out lodData);
 #endif
-
-
-#if OLD_MODE
-            List<CellProcessor.BrickData> bricks = new List<CellProcessor.BrickData>();
-            float[][] alods;
-            System.Numerics.Vector2[] nuv;
-            Vector4[] nzeroLod;
-            Vector3i topLodTextureSize;
-
-            // find non-empty cells
-            int usedCells = CellProcessor.ProcessCells(data, numberOfLods,
-                out topLodTextureSize,
-                out alods, out nuv, out nzeroLod, bricks);
-
-            Array3D<ushort>[] lods = new Array3D<ushort>[alods.Length];
-            for (int i = 0; i < alods.Length; i++)
-            {
-                lods[i] = new Array3D<ushort>(1, topLodTextureSize.X, topLodTextureSize.Y, topLodTextureSize.Z);
-                for (int j = 0; j < alods[i].Length; j++)
-                    lods[i][j] = Helper.PackFloatToUShort(alods[i][j]);
-
-                break; // only top lod is supported for now
-            }
-
-            Array3D<ushort> uv = new Array3D<ushort>(2, topLodTextureSize.X, topLodTextureSize.Y, topLodTextureSize.Z);
-            for (int j = 0; j < nuv.Length; j++)
-            {
-                uv[j * 2 + 0] = Helper.PackFloatToUShort(nuv[j].X);
-                uv[j * 2 + 1] = Helper.PackFloatToUShort(nuv[j].Y);
-            }
-
-            Array3D<ushort> zeroLod = new Array3D<ushort>(4, data.Size.X / data.CellSize, data.Size.Y / data.CellSize, data.Size.Z / data.CellSize);
-            for (int j = 0; j < nzeroLod.Length; j++)
-            {
-                zeroLod[j * 2 + 0] = Helper.PackFloatToUShort(nzeroLod[j].X);
-                zeroLod[j * 2 + 1] = Helper.PackFloatToUShort(nzeroLod[j].Y);
-                zeroLod[j * 2 + 2] = Helper.PackFloatToUShort(nzeroLod[j].Z);
-                zeroLod[j * 2 + 3] = Helper.PackFloatToUShort(nzeroLod[j].W);
-            }
-#else
-            List<CellProcessor.BrickData> bricks = new List<CellProcessor.BrickData>();
-            float[] alods;
-            System.Numerics.Vector2[] nuv;
-            Vector3i topLodTextureSize;
-
-            // find non-empty cells
-            int usedCells = CellProcessor.ProcessBricks(data,
-                out topLodTextureSize,
-                out alods, out nuv, bricks, psnr);
 
 #if LOD2_16BIT
             Array3D<ushort>[] lods = new Array3D<ushort>[1];
             {
-                lods[0] = new Array3D<ushort>(1, topLodTextureSize.X, topLodTextureSize.Y, topLodTextureSize.Z);
-                for (int j = 0; j < alods.Length; j++)
-                    lods[0][j] = Utils.Utils.PackFloatToUShort(alods[j]);
+                lods[0] = new Array3D<ushort>(1, lodData[0].Size.X, lodData[0].Size.Y, lodData[0].Size.Z);
+                for (int j = 0; j < lodData[0].Distances.Length; j++)
+                    lods[0][j] = Utils.Utils.PackFloatToUShort(lodData[0].Distances[j]);
             }
 #else
             Array3D<float>[] lods = new Array3D<float>[1];
@@ -104,52 +52,46 @@ namespace SDFTool
             }
 #endif
 
-            Array3D<ushort> uv = new Array3D<ushort>(2, topLodTextureSize.X, topLodTextureSize.Y, topLodTextureSize.Z);
-            for (int j = 0; j < nuv.Length; j++)
+            Array3D<ushort> uv = new Array3D<ushort>(2, lodData[0].Size.X, lodData[0].Size.Y, lodData[0].Size.Z);
+            for (int j = 0; j < lodData[0].UV.Length; j++)
             {
-                uv[j * 2 + 0] = Utils.Utils.PackFloatToUShort(nuv[j].X);
-                uv[j * 2 + 1] = Utils.Utils.PackFloatToUShort(nuv[j].Y);
+                uv[j * 2 + 0] = Utils.Utils.PackFloatToUShort(lodData[0].UV[j].X);
+                uv[j * 2 + 1] = Utils.Utils.PackFloatToUShort(lodData[0].UV[j].Y);
             }
-#endif
 
-            MeshGenerator.Shape[] boxes = new MeshGenerator.Shape[bricks.Count];
+            MeshGenerator.Shape[] boxes = new MeshGenerator.Shape[lodData[0].Bricks.Length];
 
             for (int i = 0; i < boxes.Length; i++)
             {
                 boxes[i] = new MeshGenerator.Shape(
-                    System.Numerics.Matrix4x4.CreateScale(bricks[i].Size) * System.Numerics.Matrix4x4.CreateTranslation(bricks[i].Position),
+                    System.Numerics.Matrix4x4.CreateScale(lodData[0].Bricks[i].Size) * System.Numerics.Matrix4x4.CreateTranslation(lodData[0].Bricks[i].Position),
                     System.Numerics.Matrix4x4.Identity,
                     MeshGenerator.ShapeType.Cube,
                     MeshGenerator.ShapeFlags.NoNormals,
                     new float[] {
-                        bricks[i].BrickId
+                        lodData[0].Bricks[i].BrickId
                     });
 
-                boxes[i].SetCubeVertexData(bricks[i].VertexDistances, bricks[i].BoneWeights);
+                boxes[i].SetCubeVertexData(lodData[0].Bricks[i].VertexDistances, lodData[0].Bricks[i].BoneWeights);
+            }
+
+            Array3D<byte>[] children = new Array3D<byte>[1];
+            {
+                int childrenBlock = 4 * 4 * 4;
+                children[0] = new Array3D<byte>(childrenBlock, lodData[0].ChildrenSize.X, lodData[0].ChildrenSize.Y, lodData[0].ChildrenSize.Z);
+
+                for (int j = 0; j < lodData[0].Children.Length; j++)
+                {   
+                    children[0][j * 4 + 0] = (byte)(lodData[0].Children[j]);
+                    children[0][j * 4 + 1] = (byte)(lodData[0].Children[j] >> 8);
+                    children[0][j * 4 + 2] = (byte)(lodData[0].Children[j] >> 16);
+                    children[0][j * 4 + 3] = 0;
+                }
             }
 
 
-            //Console.WriteLine("[{0}] Got {1} empty cells, cell grid size {2}, {3:P}, total {4} of {5}x{5}x{5} cells, size {6} vs {7}, grid {8}x{9}x{10}",
-            //sw.Elapsed, totalCells - usedCells, new Vector3i(cellsx, cellsy, cellsz), usedCells / (float)totalCells,
-            //usedCells,
-            //topLodCellSize,
-            //topLodDistance.Bytes,
-            //data.Length * Marshal.SizeOf<PixelData>(),
-            //packx, packy, packz
-            //);
-
             Console.WriteLine("[{0}] Saving LODs", sw.Elapsed);
 
-#if OLD_MODE
-            Helper.SaveKTX(
-#if LOD0_8BIT
-                Helper.KTX_RGBA8,
-#else
-                Helper.KTX_RGBA16F,
-#endif
-                zeroLod, outFile, "_lod_0.3d.ktx");
-
-#endif
 #if LOD2_8BIT
             Ktx.SaveKTX(Ktx.KTX_R8, lodDistance, outFile, "_lod.3d.ktx");
 #elif LOD2_16BIT
@@ -159,6 +101,8 @@ namespace SDFTool
 #endif
 
             Ktx.SaveKTX(Ktx.KTX_RG16F, uv, outFile, "_lod_2_uv.3d.ktx");
+
+            Ktx.SaveKTX(Ktx.KTX_RGBA8, children, outFile, "_lod_children.3d.ktx");
 
             Console.WriteLine("[{0}] KTX saved, saving boundary mesh", sw.Elapsed);
             MeshGenerator.Surface[] boxesSurface = new MeshGenerator.Surface[] { MeshGenerator.CreateBoxesMesh(boxes, "main_box") };
