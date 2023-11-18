@@ -726,7 +726,7 @@ namespace RunServer.SdfTool
 
                     //ValueTuple<int, float>[][] boxBones = GetBoxWeights(weightCache, brick.Item3, blockSize, new Vector3i(0,0,0), data.CellSize, brick.Item1 / data.CellSize);
                     ValueTuple<int, float>[][] boxBones = GetCubeWeights(weightCache, data.Data, data.Size, brick.Position, data.CellSize, brick.Position / data.CellSize);
-                    float[][] vertexDistances = GetCubeDistances(data.Data, data.Size, brick.Position, data.CellSize);
+                    float[][] vertexDistances = GetCubeDistances(pixelData, blockSize, new Vector3i(0,0,0), baseCellSize);
 
                     lodBoxes[i] = new BrickCellData(i, data.LowerBound + boxStep * new Vector3(brick.Position.X, brick.Position.Y, brick.Position.Z) / data.CellSize, boxStep * brick.CellSize / data.CellSize, boxBones, vertexDistances);
                 }
