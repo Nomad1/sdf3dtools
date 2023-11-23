@@ -42,9 +42,82 @@ namespace RunServer.SdfTool
             LowerBound = lowerBound;
             UpperBound = upperBound;
         }
+
+        public DistanceData(System.IO.Stream stream)
+        {
+            using (System.IO.BinaryReader reader = new System.IO.BinaryReader(stream))
+            {
+                int sx = reader.ReadInt32();
+                int sy = reader.ReadInt32();
+                int sz = reader.ReadInt32();
+                Size = new Vector3i(sx, sy, sz);
+                CellSize = reader.ReadInt32();
+                float lx = reader.ReadSingle();
+                float ly = reader.ReadSingle();
+                float lz = reader.ReadSingle();
+                float ux = reader.ReadSingle();
+                float uy = reader.ReadSingle();
+                float uz = reader.ReadSingle();
+                LowerBound = new Vector3(lx, ly, lz);
+                UpperBound = new Vector3(ux, uy, uz);
+
+                int length = reader.ReadInt32();
+
+                Data = new PixelData[length];
+
+                for (int i = 0; i < Data.Length; i++)
+                {
+                    float dx = reader.ReadSingle();
+                    float dy = reader.ReadSingle();
+                    float dz = reader.ReadSingle();
+                    int bx = reader.ReadInt32();
+                    int by = reader.ReadInt32();
+                    int bz = reader.ReadInt32();
+                    int bw = reader.ReadInt32();
+                    float wx = reader.ReadSingle();
+                    float wy = reader.ReadSingle();
+                    float wz = reader.ReadSingle();
+                    float ww = reader.ReadSingle();
+
+                    Data[i] = new PixelData(dx, dy, dz, new Vector4i(bx, by, bz, bw), new Vector4(wx, wy, wz, ww));
+                }
+            }
+        }
+
+        public void SaveTo(System.IO.Stream stream)
+        {
+            using (System.IO.BinaryWriter writer = new System.IO.BinaryWriter(stream))
+            {
+                writer.Write(Size.X);
+                writer.Write(Size.Y);
+                writer.Write(Size.Z);
+                writer.Write(CellSize);
+                writer.Write(LowerBound.X);
+                writer.Write(LowerBound.Y);
+                writer.Write(LowerBound.Z);
+                writer.Write(UpperBound.X);
+                writer.Write(UpperBound.Y);
+                writer.Write(UpperBound.Z);
+                writer.Write(Data.Length);
+
+                for (int i = 0; i < Data.Length; i++)
+                {
+                    writer.Write(Data[i].DistanceUV.X);
+                    writer.Write(Data[i].DistanceUV.Y);
+                    writer.Write(Data[i].DistanceUV.Z);
+                    writer.Write(Data[i].Bones.X);
+                    writer.Write(Data[i].Bones.Y);
+                    writer.Write(Data[i].Bones.Z);
+                    writer.Write(Data[i].Bones.W);
+                    writer.Write(Data[i].BoneWeights.X);
+                    writer.Write(Data[i].BoneWeights.Y);
+                    writer.Write(Data[i].BoneWeights.Z);
+                    writer.Write(Data[i].BoneWeights.W);
+                }
+            }
+        }
     }
 
-   
     public static class CellProcessor
     {
         // to return data
@@ -74,7 +147,7 @@ namespace RunServer.SdfTool
             public readonly PixelData[] Data;
             public readonly int[] Children;
 
-            public BrickData(Vector3i position, int cellSize, PixelData[] data, int [] children = null)
+            public BrickData(Vector3i position, int cellSize, PixelData[] data, int[] children = null)
             {
                 CellSize = cellSize;
                 Data = data;
@@ -92,7 +165,7 @@ namespace RunServer.SdfTool
             public readonly int[] Children;
             public readonly Vector3i ChildrenSize;
 
-            public LodData(Vector3i size, float[] distances, Vector2 [] uv, BrickCellData [] bricks, int[] children, Vector3i childrenSize)
+            public LodData(Vector3i size, float[] distances, Vector2[] uv, BrickCellData[] bricks, int[] children, Vector3i childrenSize)
             {
                 Size = size;
                 Distances = distances;
@@ -229,7 +302,7 @@ namespace RunServer.SdfTool
                                         SetArrayData(topLoduv, new Vector2(pixel.DistanceUV.Y, pixel.DistanceUV.Z), topLodTextureSize, blockStart + coord);
                                     }
 
-                            float[] distancePercentageArr = GetTrilinear(distanceBlock, paddedTopLodCellSize, 1, new Vector3(data.CellSize / 2.0f));
+                            float[] distancePercentageArr = GetTrilinear(distanceBlock, paddedTopLodCellSize, 1, new Vector3(data.CellSize / 2.0f, data.CellSize / 2.0f, data.CellSize / 2.0f));
 
                             distancePercentage = distancePercentageArr[0]; // central point
 
@@ -301,9 +374,9 @@ namespace RunServer.SdfTool
 
             Vector3i topLodTextureSize = new Vector3i(packx, packy, packz) * paddedTopLodCellSize;
 
-            float [] topLodDistances = new float[topLodTextureSize.X * topLodTextureSize.Y * topLodTextureSize.Z];
+            float[] topLodDistances = new float[topLodTextureSize.X * topLodTextureSize.Y * topLodTextureSize.Z];
 
-            Vector2 [] topLoduv = new Vector2[packx * paddedTopLodCellSize * packy * paddedTopLodCellSize * packz * paddedTopLodCellSize];
+            Vector2[] topLoduv = new Vector2[packx * paddedTopLodCellSize * packy * paddedTopLodCellSize * packz * paddedTopLodCellSize];
 
             Vector3 boxStep = (data.UpperBound - data.LowerBound) / new Vector3(cellsx, cellsy, cellsz);
 
@@ -343,7 +416,7 @@ namespace RunServer.SdfTool
                 boxes[i] = new BrickCellData(i, data.LowerBound + boxStep * new Vector3(brick.Position.X, brick.Position.Y, brick.Position.Z) / data.CellSize, boxStep * brick.CellSize / data.CellSize, boxBones, vertexDistances);
             }
 
-            topLod = new LodData(topLodTextureSize, topLodDistances, topLoduv, boxes, null, new Vector3i(0,0,0));
+            topLod = new LodData(topLodTextureSize, topLodDistances, topLoduv, boxes, null, new Vector3i(0, 0, 0));
             return bricks.Count;
         }
 
@@ -598,6 +671,7 @@ namespace RunServer.SdfTool
         public static int ProcessBricksWithLods(
             DistanceData data,
             int baseCellSize,
+            bool processWeights,
 
             out LodData[] lods
             )
@@ -605,9 +679,10 @@ namespace RunServer.SdfTool
             Dictionary<Vector3i, ValueTuple<int, float>[]> weightCache = new Dictionary<Vector3i, ValueTuple<int, float>[]>();
 
             int cellSize = data.CellSize;
-            if (cellSize != 4 && cellSize != 16 && cellSize != 256)
+            if (cellSize != 4 && cellSize != 16 && cellSize != 64 && cellSize != 256 &&
+                cellSize != 3 && cellSize != 9 && cellSize != 27 && cellSize != 81)
             {
-                throw new Exception("Only cell size 4, 16 and 256 are supported at the moment!");
+                throw new Exception("Only cell size 4^x and 3^x are supported at the moment!");
             }
 
             int cellsx = data.Size.X / baseCellSize;
@@ -620,13 +695,17 @@ namespace RunServer.SdfTool
 
             //DebugLog("Used cells: {0}, cellsx: {1}, cellsy: {2}, cellsz: {3}, blockSize: {4}", usedCells, cellsx, cellsy, cellsz, paddedTopLodCellSize);
 
+            //DebugLog("Used cells: {0}, cellsx: {1}, cellsy: {2}, cellsz: {3}, blockSize: {4}", 0, cellsx, cellsy, cellsz, paddedTopLodCellSize);
+
             int lodLevels = 0;
             int ncellSize = cellSize;
             while (ncellSize >= baseCellSize)
             {
-                ncellSize = (int)Math.Sqrt(ncellSize);
+                ncellSize /= baseCellSize;
                 lodLevels++;
             }
+
+            DebugLog("Processing {0} lod levels, from {1} to {2}", lodLevels, baseCellSize, cellSize);
 
             List<BrickData>[] resultBricks = new List<BrickData>[lodLevels];
 
@@ -635,13 +714,18 @@ namespace RunServer.SdfTool
             resultBricks[0] = new List<BrickData>();
             ncellSize = cellSize;
 
+
+            DebugLog("Processing lod {0}, cell size {1}", 0, ncellSize);
             // lod 0 is added as is2z3zxv4cb5v68789m,,,,,,,,0.-/////////.0,9m.p8ionuobyi j  hf g f
             FindFixedBricks(data.Data, data.Size, ncellSize, resultBricks[0], new Vector3i(0, 0, 0), lod0, new Vector3i(cellsx, cellsy, cellsz));
+            DebugLog("Brick count: {0}", resultBricks[0].Count);
 
             for (int lod = 1; lod < lodLevels; lod++)
             {
                 resultBricks[lod] = new List<BrickData>();
-                ncellSize = (int)Math.Round(Math.Sqrt(ncellSize));
+                ncellSize /= baseCellSize;
+
+                DebugLog("Processing lod {0}, cell size {1}", lod, ncellSize);
 
                 foreach (var brick in resultBricks[lod - 1])
                 {
@@ -650,6 +734,8 @@ namespace RunServer.SdfTool
                     FindFixedBricks(brick.Data, new Vector3i(brick.CellSize + 1, brick.CellSize + 1, brick.CellSize + 1), ncellSize,
                         resultBricks[lod], brick.Position, brick.Children, new Vector3i(baseCellSize, baseCellSize, baseCellSize));
                 }
+
+                DebugLog("Brick count: {0}", resultBricks[lod].Count);
             }
 
             Vector3i[] packing = new Vector3i[lodLevels];
@@ -662,10 +748,14 @@ namespace RunServer.SdfTool
                 packing[lod] = new Vector3i(packx, packy, packz);
             }
 
+            Vector3 boxStep = (data.UpperBound - data.LowerBound) / (new Vector3(cellsx, cellsy, cellsz) * baseCellSize);
+
             lods = new LodData[lodLevels];
 
             for (int lod = 0; lod < lodLevels; lod++)
             {
+                DebugLog("Packing lod {0}", lod);
+
                 Vector3i pack = packing[lod];
 
                 Vector3i lodTextureSize = pack * paddedTopLodCellSize;
@@ -676,8 +766,6 @@ namespace RunServer.SdfTool
                 int[] lodChildren = new int[lodChildrenSize.X * lodChildrenSize.Y * lodChildrenSize.Z];
 
                 BrickCellData[] lodBoxes = new BrickCellData[resultBricks[lod].Count];
-
-                Vector3 boxStep = (data.UpperBound - data.LowerBound) / new Vector3(cellsx, cellsy, cellsz);
 
                 int pxy = pack.X * pack.Y;
 
@@ -725,10 +813,10 @@ namespace RunServer.SdfTool
                     }
 
                     //ValueTuple<int, float>[][] boxBones = GetBoxWeights(weightCache, brick.Item3, blockSize, new Vector3i(0,0,0), data.CellSize, brick.Item1 / data.CellSize);
-                    ValueTuple<int, float>[][] boxBones = GetCubeWeights(weightCache, data.Data, data.Size, brick.Position, data.CellSize, brick.Position / data.CellSize);
-                    float[][] vertexDistances = GetCubeDistances(pixelData, blockSize, new Vector3i(0,0,0), baseCellSize);
+                    ValueTuple<int, float>[][] boxBones = processWeights ? GetCubeWeights(weightCache, data.Data, data.Size, brick.Position, baseCellSize, brick.Position / data.CellSize) : null;
+                    float[][] vertexDistances = GetCubeDistances(pixelData, blockSize, new Vector3i(0, 0, 0), baseCellSize);
 
-                    lodBoxes[i] = new BrickCellData(i, data.LowerBound + boxStep * new Vector3(brick.Position.X, brick.Position.Y, brick.Position.Z) / data.CellSize, boxStep * brick.CellSize / data.CellSize, boxBones, vertexDistances);
+                    lodBoxes[i] = new BrickCellData(i, data.LowerBound + boxStep * new Vector3(brick.Position.X, brick.Position.Y, brick.Position.Z), boxStep * brick.CellSize, boxBones, vertexDistances);
                 }
 
                 lods[lod] = new LodData(lodTextureSize, lodDistances, lodUv, lodBoxes, lodChildren, lodChildrenSize);

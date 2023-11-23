@@ -494,39 +494,33 @@ namespace SDFTool.Utils
             int paddedTopLodCellSize = topLodCellSize;
             topLodCellSize--;
 
-            // number of extra pixels on the each size
-            int lodPadding = 1;
 
             // multiply by this value to convert scene units to pixels
-            float sceneToPixels = ((lod0pixels - lodPadding * 2)) / maxSide; // step for lod 2
+            float sceneToPixels = lod0pixels / maxSide; // step for lod 2
 
             // multiply by this value to convert pixels to scene units
             float pixelsToScene = 1.0f / sceneToPixels;
 
             // exact number of pixels 
 
-            int sx = (int)Math.Ceiling((sceneMax.X - sceneMin.X) * sceneToPixels) + topLodCellSize * 2;
-            int sy = (int)Math.Ceiling((sceneMax.Y - sceneMin.Y) * sceneToPixels) + topLodCellSize * 2;
-            int sz = (int)Math.Ceiling((sceneMax.Z - sceneMin.Z) * sceneToPixels) + topLodCellSize * 2;
+            int sx = (int)Math.Ceiling((sceneMax.X - sceneMin.X) * sceneToPixels);
+            int sy = (int)Math.Ceiling((sceneMax.Y - sceneMin.Y) * sceneToPixels);
+            int sz = (int)Math.Ceiling((sceneMax.Z - sceneMin.Z) * sceneToPixels);
 
-            if (sx % topLodCellSize != 0)
-                sx += topLodCellSize - sx % topLodCellSize;
-            if (sy % topLodCellSize != 0)
-                sy += topLodCellSize - sy % topLodCellSize;
-            if (sz % topLodCellSize != 0)
-                sz += topLodCellSize - sz % topLodCellSize;
+            int padx = sx % topLodCellSize != 0 ? topLodCellSize - sx % topLodCellSize : topLodCellSize;
+            int pady = sy % topLodCellSize != 0 ? topLodCellSize - sy % topLodCellSize : topLodCellSize;
+            int padz = sz % topLodCellSize != 0 ? topLodCellSize - sz % topLodCellSize : topLodCellSize;
+
+            sx += padx + 1;
+            sy += pady + 1;
+            sz += padz + 1;
 
             // we need to increase the size by one since each cell takes (topLodCellSize + 1) pixels and last one will be left without it
-            sx++;
-            sy++;
-            sz++;
 
-            Vector3i dataSize = new Vector3i(sx, sy, sz);
+            Vector padding = new Vector(padx , pady, padz) * pixelsToScene * 0.5f;
 
-            float padding = topLodCellSize * pixelsToScene;
-
-            Vector lowerBound = sceneMin - new Vector(padding);
-            Vector upperBound = sceneMax + new Vector(padding);
+            Vector lowerBound = sceneMin - padding;
+            Vector upperBound = sceneMax + padding;
 
             Console.WriteLine("[{0}] File preprocessed. X: {1}, Y: {2}, Z: {3}, maximum distance: {4}", sw.Elapsed, sx, sy, sz, maxSide);
 
@@ -547,7 +541,7 @@ namespace SDFTool.Utils
 
             obones = new[] { bones };
 
-            return new DistanceData(topLodCellSize, data, dataSize, lowerBound, upperBound);
+            return new DistanceData(topLodCellSize, data, new Vector3i(sx, sy, sz), lowerBound, upperBound);
         }
 
     }

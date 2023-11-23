@@ -89,7 +89,7 @@ namespace SDFTool.Utils
                     writer.Write(surface.TCLength); // number of bytes in TC channels
 
                     bool useNormals = surface.Normals != null && surface.Normals.Count == surface.Vertices.Count;
-                    bool useWeights = surface.VertexWeights != null && surface.VertexWeights.Count == surface.Vertices.Count;
+                    bool useWeights = oldScene != null && bones != null && surface.VertexWeights != null && surface.VertexWeights.Count == surface.Vertices.Count;
 
                     int flags = 0;
                     if (useNormals)

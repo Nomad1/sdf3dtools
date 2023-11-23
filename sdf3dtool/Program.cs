@@ -4,7 +4,6 @@
 //#define OLD_MODE
 
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using RunServer.SdfTool;
@@ -33,7 +32,8 @@ namespace SDFTool
             CellProcessor.ProcessBricks(data, psnr, lodData[0]);
 #else
             // find non-empty cells
-            CellProcessor.ProcessBricksWithLods(data, 4, out lodData);
+            
+            CellProcessor.ProcessBricksWithLods(data, data.CellSize % 4 == 0 ? 4 : data.CellSize % 3 == 0 ? 3 : data.CellSize, scene != null, out lodData);
 #endif
 
             for (int l = 0; l < lodData.Length; l++)
@@ -150,7 +150,21 @@ namespace SDFTool
             Assimp.Scene scene;
             ValueTuple<string, Assimp.Bone>[][] bones;
             Assimp.Matrix4x4 matrix;
-            DistanceData data = Utils.Assimp.ProcessAssimpImport(fileName, gridSize, size, cellSize, sw, out scene, out bones, out matrix);
+            DistanceData data;
+
+            Console.WriteLine("[{0}] Loading file {1}", sw.Elapsed, fileName);
+
+            if (Path.GetExtension(fileName).EndsWith(".points"))
+            {
+                data = new DistanceData(File.OpenRead(fileName));
+                scene = null;
+                bones = null;
+                matrix = Assimp.Matrix4x4.Identity;
+
+                Console.WriteLine("[{0}] Bounding box: {1} - {2}, points {3}", sw.Elapsed, data.LowerBound, data.UpperBound, data.Size);
+            }
+            else
+                data = Utils.Assimp.ProcessAssimpImport(fileName, gridSize, size, cellSize, sw, out scene, out bones, out matrix);
 
             ProcessPixelData(data, outFileName, psnr,
                 sw, scene, bones, matrix);
@@ -159,6 +173,7 @@ namespace SDFTool
             Console.WriteLine("[{0}] All done", sw.Elapsed);
             sw.Stop();
         }
+
     }
 }
 
