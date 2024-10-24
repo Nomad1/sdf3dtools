@@ -55,32 +55,31 @@ class PreparedTriangle:
             c: Third vertex position as numpy array of shape (3,)
         """
         self.id = id
-        self.a = a.astype(np.float32)
-        self.b = b.astype(np.float32)
-        self.c = c.astype(np.float32)
+        self.a = a
+        self.b = b
+        self.c = c
         
         # Calculate normal vector
-        self.n = np.cross(b - a, c - a)
+        n = np.cross(b - a, c - a)
         
-        # Calculate area and normalize normal vector
-        self.area = np.sum(self.n * self.n)  # squared length of normal
-        self.normal_length = max(np.sqrt(self.area), 1.0e-20)
-        self.n = self.n / self.normal_length
-        self.area /= 2
+        area = n[0]*n[0] + n[1]*n[1] + n[2]*n[2]
+
+        # Calculate area and normalize normal vector using np.linalg.norm
+        self.normal_length = max(np.sqrt(area), 1.0e-20)
+        self.n = n / self.normal_length
+        self.area = area / 2
         
-        # Calculate center and radius
+        # Calculate center and radius more efficiently
         center = (a + b + c) / 3.0
         self.radius = np.sqrt(max(
-            max(
-                np.sum((center - a) ** 2),
-                np.sum((center - b) ** 2)
-            ),
-            np.sum((center - c) ** 2)
+            (a[0]-center[0])*(a[0]-center[0]) + (a[1]-center[1])*(a[1]-center[1])+(a[2]-center[2])*(a[2]-center[2]),
+            (b[0]-center[0])*(b[0]-center[0]) + (b[1]-center[1])*(b[1]-center[1])+(b[2]-center[2])*(b[2]-center[2]),
+            (c[0]-center[0])*(c[0]-center[0]) + (c[1]-center[1])*(c[1]-center[1])+(c[2]-center[2])*(c[2]-center[2])
         ))
         
-        # Calculate bounds
-        self.lower_bound = np.minimum(np.minimum(a, b), c)
-        self.upper_bound = np.maximum(np.maximum(a, b), c)
+        # Calculate bounds in one operation
+        self.lower_bound = np.min([a, b, c], axis=0)
+        self.upper_bound = np.max([a, b, c], axis=0)
 
     def closest_point_to_triangle(self, p: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
