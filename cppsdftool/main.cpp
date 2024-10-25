@@ -182,7 +182,7 @@ ProcessingMetadata processModel(const std::string& filename, const std::string& 
               << ", maximum distance: " << maxSide << std::endl;
 
     // Create triangle grid
-    TriangleGrid triangleGrid(sceneMin, sceneMax, sx, sy, sz, triangles);
+    TriangleGrid triangleGrid(sceneMin, sceneMax, sx / topLodCellSize + (sx % topLodCellSize != 0), sy / topLodCellSize+ (sy % topLodCellSize != 0), sz / topLodCellSize + (sz % topLodCellSize != 0), triangles);
 
     currentTime = std::chrono::high_resolution_clock::now();
     elapsedDuration = currentTime - startTime;

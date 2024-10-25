@@ -226,20 +226,24 @@ std::vector<float> TriangleGrid::dispatch(const glm::vec3& lowerBound, float pix
     int maxCount = sx * sy * sz;
     std::vector<float> result(maxCount * 4);
 
-    for (int i = 0; i < maxCount; ++i) {
-        int iz = i / (sx * sy);
-        int iy = (i % (sx * sy)) / sx;
-        int ix = (i % (sx * sy)) % sx;
+    // Use OpenMP to parallelize the loop
+    #pragma omp parallel for schedule(dynamic) collapse(3)
+    for (int iz = 0; iz < sz; ++iz) {
+        for (int iy = 0; iy < sy; ++iy) {
+            for (int ix = 0; ix < sx; ++ix) {
+                int index = (iz * sy * sx + iy * sx + ix) * 4;
+                
+                glm::vec3 point = lowerBound + glm::vec3(ix, iy, iz) * pixelsToScene;
+                auto [distance, weights, triangleId] = findTriangles(point);
+                float pixelDistance = distance * sceneToPixels;
 
-        glm::vec3 point = lowerBound + glm::vec3(ix, iy, iz) * pixelsToScene;
-        
-        auto [distance, weights, triangleId] = findTriangles(point);
-        float pixelDistance = distance * sceneToPixels;
-
-        result[i * 4] = pixelDistance;
-        result[i * 4 + 1] = weights.x;
-        result[i * 4 + 2] = weights.y;
-        result[i * 4 + 3] = static_cast<float>(triangleId);
+                // Store results in a thread-safe manner
+                result[index] = pixelDistance;
+                result[index + 1] = weights.x;
+                result[index + 2] = weights.y;
+                result[index + 3] = static_cast<float>(triangleId);
+            }
+        }
     }
 
     return result;
