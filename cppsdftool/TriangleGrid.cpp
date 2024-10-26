@@ -246,13 +246,13 @@ int TriangleGrid::countIntersections(const glm::vec3& point, const glm::vec3& di
 
     glm::vec3 localEndPoint = localPoint + dir * boundExit;
 
-    std::set<const PreparedTriangle*> triangles;
+    std::set<int> triangles;
 
     auto processCell = [&](size_t index) {
         if (!grid[index]) return;
 
         for (const auto& triangle : *grid[index]) {
-            if (triangles.insert(&triangle).second) {
+            if (triangles.insert(triangle.getId()).second) {
                 if (!rayBoundIntersection(triangle.getLowerBound(), 
                                         triangle.getUpperBound(), point, idir)) {
                     continue;
@@ -359,6 +359,8 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::vec3& p
     result.triangleId = -1;
     result.weights = glm::vec3(0.0f);
 
+    glm::vec3 resultPoint;
+
     float minDistanceSqrd = std::numeric_limits<float>::infinity();
     const PreparedTriangle* closestTriangle = nullptr;
 
@@ -421,6 +423,7 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::vec3& p
                     ub = point + glm::vec3(result.distance);
                     
                     closestTriangle = &triangle;
+                    resultPoint = point;
                     result.weights = weights;
                     result.triangleId = triangle.getId();
                 }
@@ -440,8 +443,7 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::vec3& p
         if (std::isinf(result.distance)) {
             direction = point - glm::vec3(0.5f);
         } else {
-            auto [closestPoint, _] = closestTriangle->closestPointToTriangle(point);
-            direction = point - closestPoint;
+            direction = point - resultPoint;
         }
         direction = glm::normalize(direction);
 
