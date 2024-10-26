@@ -201,7 +201,8 @@ int TriangleGrid::getTriangleCount() const {
 std::vector<float> TriangleGrid::dispatch(const glm::vec3& lowerBound, float pixelsToScene,
                                         float sceneToPixels, int sx, int sy, int sz) {
     int maxCount = sx * sy * sz;
-    std::vector<float> result(maxCount * 4);
+    std::vector<float> result;
+    result.resize(maxCount * 4);
 
     // Use OpenMP to parallelize the loop
     #pragma omp parallel for schedule(dynamic) collapse(3)
@@ -396,7 +397,7 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::vec3& p
         if (i >= 27 && localDist == std::numeric_limits<float>::infinity()) {
             earlyExit = true;
             result.distance = offsetLengths[i] * gridStep;
-            //result.point = m_sceneMin + glm::vec3(pointx + 0.5f, pointy + 0.5f, pointz + 0.5f) * m_gridStep;
+            resultPoint = sceneMin + glm::vec3(pointX + 0.5f, pointY + 0.5f, pointZ + 0.5f) * gridStep;
             break;
         }
 
@@ -439,13 +440,7 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::vec3& p
 
     // Determine sign using ray casting
     if (!earlyExit && closestTriangle) {
-        glm::vec3 direction;
-        if (std::isinf(result.distance)) {
-            direction = point - glm::vec3(0.5f);
-        } else {
-            direction = point - resultPoint;
-        }
-        direction = glm::normalize(direction);
+        glm::vec3 direction = glm::normalize(point - resultPoint);
 
         std::vector<glm::vec3> testDirections = {
             direction,
@@ -455,6 +450,10 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::vec3& p
 
         int sign = 0;
         for (const auto& dir : testDirections) {
+            if (std::isnan(direction.x) || std::isnan(direction.y) || std::isnan(direction.z)) {
+                direction = glm::normalize(point - glm::vec3(0.5f, 0.5f, 0.5f));
+            }
+
             sign += (countIntersections(point, dir) % 2 == 0) ? 1 : -1;
             if (std::abs(sign) >= static_cast<int>(testDirections.size()) / 2 + 1) {
                 break;

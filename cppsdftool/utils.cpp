@@ -13,7 +13,7 @@ binary_ofstream& binary_ofstream::write(const char* data, std::streamsize count)
 
 void binary_ofstream::pad_to(std::streampos position) {
     while (tellp() < position) {
-        write('\0');
+        write((int)0);
     }
 }
 
@@ -73,7 +73,7 @@ void saveKTX(uint format, uint width, uint height, uint depth,
     if (stride == 0)
         stride = 1;
 
-    writer.write(data.size() / stride); // current mipmap size
+    writer.write((uint)(data.size() * 4/ stride)); // current mipmap size
 
     for (size_t i = 0; i < data.size(); i += stride) {
         writer.write(data[i]);
