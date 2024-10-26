@@ -166,10 +166,9 @@ namespace SDFTool
             else
                 data = Utils.Assimp.ProcessAssimpImport(fileName, gridSize, size, cellSize, sw, out scene, out bones, out matrix);
 
-            ProcessPixelData(data, outFileName, psnr,
-                sw, scene, bones, matrix);
-
-
+            //ProcessPixelData(data, outFileName, psnr,
+            //sw, scene, bones, matrix);
+            
             Console.WriteLine("[{0}] All done", sw.Elapsed);
             sw.Stop();
         }

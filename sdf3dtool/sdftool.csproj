@@ -44,7 +44,7 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="PreparedTriangle.cs" />
-    <Compile Include="TriangleMap.cs" />
+    <Compile Include="TriangleGrid.cs" />
     <Compile Include="MeshGenerator.cs" />
     <Compile Include="SdfTool\CellProcessor.cs" />
     <Compile Include="SdfTool\Vector3i.cs" />

@@ -529,11 +529,26 @@ namespace SDFTool.Utils
             float[] distanceData = new float[maxcount * 4];
 
             // Use TriangleMap to generate raw SDF grid
-            TriangleMap triangleMap = new TriangleMap(sceneMin, sceneMax, gridCellCount, triangleList);
+            TriangleGrid triangleMap = new TriangleGrid(sceneMin, sceneMax,
+                sx / topLodCellSize + ((sx % topLodCellSize != 0) ? 1 : 0),
+                sy / topLodCellSize + ((sy % topLodCellSize != 0) ? 1 : 0),
+                sz / topLodCellSize + ((sz % topLodCellSize != 0) ? 1 : 0),
+                triangleList);
 
             triangleMap.Dispatch(distanceData, lowerBound, pixelsToScene, sceneToPixels / paddedTopLodCellSize, sx, sy, sz, (progress) => Console.WriteLine("[{0}] Processing {1:P2}", sw.Elapsed, progress));
 
             Console.WriteLine("Bounding box: {0} - {1}, step {2}, triangles {3}, cells {4}, instances {5}", sceneMin, sceneMax, sceneToPixels, triangleMap.TriangleCount, triangleMap.CellsUsed, triangleMap.TriangleInstances);
+
+            // temporary! Remove it
+
+            string file = (Path.GetFileNameWithoutExtension("out.sdf"));
+
+            using (Stream stream = File.Open(file, FileMode.Create, FileAccess.Write, FileShare.None))
+            using (BinaryWriter writer = new BinaryWriter(stream))
+            {
+                foreach (float fdata in distanceData)
+                    writer.Write(fdata);
+            }
 
             PixelData[] data = GetPixelData(distanceData, boneDictionary, triangleList);
 

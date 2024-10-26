@@ -37,26 +37,21 @@ namespace SDFTool
            
             Data = parent;
 
-            N = Vector3.Cross(b - a, c - a);
+            Vector3 n = Vector3.Cross(b - a, c - a);
+            float area = Vector3.Dot(n, n);
 
-            Area = N.LengthSquared();
-            NormalLength = Math.Max((float)Math.Sqrt(Area), 1.0e-20f);
-            N /= NormalLength;
-            Area /= 2;
+            NormalLength = Math.Max((float)Math.Sqrt(area), float.Epsilon);
+            N = n / NormalLength;
+            Area = area / 2.0f;
 
-            Vector3 center = (a + b + c) * 0.33333333333f;
+            Vector3 center = (a + b + c) / 3.0f;
             Radius = (float)Math.Sqrt(Math.Max(Math.Max(Vector3.DistanceSquared(center, A), Vector3.DistanceSquared(center, B)), Vector3.DistanceSquared(center, C)));
-
-            LowerBound.X = Math.Min(Math.Min(a.X, b.X), c.X);
-            LowerBound.Y = Math.Min(Math.Min(a.Y, b.Y), c.Y);
-            LowerBound.Z = Math.Min(Math.Min(a.Z, b.Z), c.Z);
-            UpperBound.X = Math.Max(Math.Max(a.X, b.X), c.X);
-            UpperBound.Y = Math.Max(Math.Max(a.Y, b.Y), c.Y);
-            UpperBound.Z = Math.Max(Math.Max(a.Z, b.Z), c.Z);
+            LowerBound = Vector3.Min(Vector3.Min(a, b), c);
+            UpperBound = Vector3.Max(Vector3.Max(a, b), c);
         }
 
 #if USE_OLD_DISTANCE
-        public static Vector3 ClosetPointToTriangle(PreparedTriangle t, Vector3 p, out Vector3 weights)
+        public static Vector3 ClosestPointToTriangle(PreparedTriangle t, Vector3 p, out Vector3 weights)
         {
             Vector3 pa = p - t.A;
             Vector3 pb = p - t.B;
@@ -104,7 +99,7 @@ namespace SDFTool
             return t.A * weights.X + t.B * weights.Y + t.C * weights.Z;
         }
 #else
-        public static Vector3 ClosetPointToTriangle(PreparedTriangle t, Vector3 p, out Vector3 weights)
+        public static Vector3 ClosestPointToTriangle(PreparedTriangle t, Vector3 p, out Vector3 weights)
         {
             float snom = Vector3.Dot(p - t.A, t.B - t.A);
             float sdenom = Vector3.Dot(p - t.B, t.A - t.B);

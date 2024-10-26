@@ -13,35 +13,22 @@ namespace SDFTool
     /// <summary>
     /// 3D structure separating the space to cube based tiles
     /// </summary>
-    internal class TriangleMap
+    internal class TriangleGrid
     {
-        private struct NibbleCell
-        {
-            public readonly float Length;
-            public readonly int X, Y, Z;
-
-            public NibbleCell(int x, int y, int z)
-            {
-                X = x;
-                Y = y;
-                Z = z;
-                Length = (float)Math.Sqrt(x * x + y * y + z * z);
-            }
-        }
-
         /// <summary>
         /// For any given model this represents the maximum tiles for each axis
         /// </summary>
-        private readonly float m_denominator;
-        private readonly PreparedTriangle[][] m_triangles;
+        //private readonly float m_denominator;
+        private readonly PreparedTriangle[][] m_grid;
         private readonly float m_gridStep;
         private readonly Vector3 m_sceneMin;
 
-        private readonly NibbleCell[] m_nibble;
+        private readonly Vector3i[] m_cellOffsets;
+        private readonly float[] m_cellLengths;
 
-        private readonly int m_gridx;
-        private readonly int m_gridy;
-        private readonly int m_gridz;
+        private readonly int m_gridX;
+        private readonly int m_gridY;
+        private readonly int m_gridZ;
 
         public readonly int TriangleCount;
         public readonly int TriangleInstances;
@@ -49,21 +36,24 @@ namespace SDFTool
 
         public Vector3i GridSize
         {
-            get { return new Vector3i(m_gridx, m_gridy, m_gridz); }
+            get { return new Vector3i(m_gridX, m_gridY, m_gridZ); }
         }
 
-        public TriangleMap(Vector3 sceneMin, Vector3 sceneMax, float denominator, IList<PreparedTriangle> triangleList)
+        public TriangleGrid(Vector3 sceneMin, Vector3 sceneMax, int gridX, int gridY, int gridZ, IList<PreparedTriangle> triangleList)
         {
-            m_denominator = denominator;
+            //m_denominator = denominator;
 
             m_sceneMin = sceneMin;
-            m_gridStep = Math.Max(Math.Max(sceneMax.X - sceneMin.X, sceneMax.Y - sceneMin.Y), sceneMax.Z - sceneMin.Z) / denominator;
+            m_gridStep = Math.Max(Math.Max((sceneMax.X - sceneMin.X) / gridX, (sceneMax.Y - sceneMin.Y) / gridY), (sceneMax.Z - sceneMin.Z) / gridZ);
 
-            m_gridx = (int)Math.Ceiling((sceneMax.X - sceneMin.X) / m_gridStep) + 1;
-            m_gridy = (int)Math.Ceiling((sceneMax.Y - sceneMin.Y) / m_gridStep) + 1;
-            m_gridz = (int)Math.Ceiling((sceneMax.Z - sceneMin.Z) / m_gridStep) + 1;
+            m_gridX = gridX;
+            m_gridY = gridY;
+            m_gridZ = gridZ;
+            //m_gridx = (int)Math.Ceiling((sceneMax.X - sceneMin.X) / m_gridStep) + 1;
+            //m_gridy = (int)Math.Ceiling((sceneMax.Y - sceneMin.Y) / m_gridStep) + 1;
+            //m_gridz = (int)Math.Ceiling((sceneMax.Z - sceneMin.Z) / m_gridStep) + 1;
 
-            List<PreparedTriangle>[] triangles = new List<PreparedTriangle>[m_gridx * m_gridy * m_gridz];
+            List<PreparedTriangle>[] triangles = new List<PreparedTriangle>[m_gridX * m_gridY * m_gridZ];
 
             CellsUsed = 0;
             TriangleCount = triangleList.Count;
@@ -76,9 +66,9 @@ namespace SDFTool
                 int fromy = Math.Max((int)Math.Floor(lb.Y), 0);
                 int fromz = Math.Max((int)Math.Floor(lb.Z), 0);
                 Vector3 ub = (triangle.UpperBound - m_sceneMin) / m_gridStep;
-                int tox = Math.Min((int)Math.Ceiling(ub.X), m_gridx - 1);
-                int toy = Math.Min((int)Math.Ceiling(ub.Y), m_gridy - 1);
-                int toz = Math.Min((int)Math.Ceiling(ub.Z), m_gridz - 1);
+                int tox = Math.Min((int)Math.Ceiling(ub.X), m_gridX - 1);
+                int toy = Math.Min((int)Math.Ceiling(ub.Y), m_gridY - 1);
+                int toz = Math.Min((int)Math.Ceiling(ub.Z), m_gridZ - 1);
 
                 int instances = 0;
 
@@ -93,7 +83,7 @@ namespace SDFTool
                             if (!triangle.PlaneIntersectsAABB(tileStart, tileEnd))
                                 continue;
 
-                            int index = x + y * m_gridx + z * m_gridx * m_gridy;
+                            int index = x + y * m_gridX + z * m_gridX * m_gridY;
 
 
                             if (triangles[index] == null)
@@ -126,33 +116,36 @@ namespace SDFTool
                 TriangleInstances += instances;
             }
 
-            m_triangles = new PreparedTriangle[triangles.Length][];
+            m_grid = new PreparedTriangle[triangles.Length][];
 
             for (int i = 0; i < triangles.Length; i++)
                 if (triangles[i] != null)
                 {
                     triangles[i].Sort((x, y) => -x.Area.CompareTo(y.Area));
-                    m_triangles[i] = triangles[i].ToArray();
+                    m_grid[i] = triangles[i].ToArray();
                 }
 
-            List<NibbleCell> nibble = new List<NibbleCell>();
+            List<Vector3i> nibble = new List<Vector3i>();
 
-            for (int z = -m_gridz; z < m_gridz; z++)
-                for (int y = -m_gridy; y < m_gridy; y++)
-                    for (int x = -m_gridx; x < m_gridx; x++)
-                        nibble.Add(new NibbleCell(x, y, z));
+            for (int z = -m_gridZ; z < m_gridZ; z++)
+                for (int y = -m_gridY; y < m_gridY; y++)
+                    for (int x = -m_gridX; x < m_gridX; x++)
+                        nibble.Add(new Vector3i(x, y, z));
 
-            nibble.Sort((x, y) => x.Length.CompareTo(y.Length));
+            nibble.Sort((x, y) => x.LengthSqrd.CompareTo(y.LengthSqrd));
 
-            m_nibble = nibble.ToArray();
+            m_cellOffsets = nibble.ToArray();
+
+            m_cellLengths = new float[m_cellOffsets.Length];
+            for (int i = 0; i < m_cellOffsets.Length; i++)
+                m_cellLengths[i] = (float)Math.Sqrt(m_cellOffsets[i].LengthSqrd);
         }
 
-        public bool FindTriangles(Vector3 point, out float distance, out Vector3 weights, out int triangleId)
+        public void FindTriangles(Vector3 point, out float distance, out Vector3 weights, out int triangleId)
         {
             distance = float.MaxValue;
             float minDistanceSqrd = float.MaxValue;
             triangleId = -1;
-            PreparedTriangle closestTriangle = null;
             weights = Vector3.Zero;
             Vector3 result = Vector3.Zero;
             int sign;
@@ -162,7 +155,7 @@ namespace SDFTool
             int pointy = (int)Math.Floor(localPoint.Y);
             int pointz = (int)Math.Floor(localPoint.Z);
 
-            HashSet<PreparedTriangle> triangles = new HashSet<PreparedTriangle>();
+            HashSet<int> triangles = new HashSet<int>();
 
             float localDist = float.MaxValue;
             Vector3 lb = Vector3.Zero;
@@ -172,31 +165,27 @@ namespace SDFTool
 
             // we check farther grid cells with each step
             // stopping when a point found with a distance smaller than all remaining cells
-            for (int i = 0; i < m_nibble.Length; i++)
+            for (int i = 0; i < m_cellOffsets.Length; i++)
             {
-                if (m_nibble[i].Length > localDist)
+                if (m_cellLengths[i] > localDist)
                     break;
 
                 // check is cells are outside of the grid
 
-                int x = pointx + m_nibble[i].X;
-                if (x < 0 || x >= m_gridx)
-                    continue;
-                int y = pointy + m_nibble[i].Y;
-                if (y < 0 || y >= m_gridy)
-                    continue;
-                int z = pointz + m_nibble[i].Z;
-                if (z < 0 || z >= m_gridz)
+                int x = pointx + m_cellOffsets[i].X;
+                int y = pointy + m_cellOffsets[i].Y;
+                int z = pointz + m_cellOffsets[i].Z;
+                if (x < 0 || x >= m_gridX || y < 0 || y >= m_gridY || z < 0 || z >= m_gridZ)
                     continue;
 
-                int index = x + y * m_gridx + z * m_gridx * m_gridy;
+                int index = x + y * m_gridX + z * m_gridX * m_gridY;
 
 
                 if (i >= 27 && localDist == float.MaxValue) // if this cell is solitary, meaning all neighbors are empty, we can just put in an average distance
                 {
                     earlyExit = true;
 #if !DONT_USE_EARLY_EXIT
-                    distance = m_nibble[i].Length * m_gridStep;
+                    distance = m_cellLengths[i] * m_gridStep;
                     result = m_sceneMin + new Vector3(pointx + 0.5f, pointy + 0.5f, pointz + 0.5f) * m_gridStep;
                     //if (weights.X < 0 || weights.Y < 0 || weights.Z < 0 || weights.X > 1 || weights.Y > 1 || weights.Z > 1)
                     //Console.WriteLine("Weights are invalid!");
@@ -205,14 +194,12 @@ namespace SDFTool
 #endif
                 }
                 // empty cells
-                if (m_triangles[index] == null)
+                if (m_grid[index] == null)
                     continue;
 
-                foreach (var triangle in m_triangles[index])
-                    if (!triangles.Contains(triangle))
+                foreach (var triangle in m_grid[index])
+                    if (triangles.Add(triangle.Id))
                     {
-                        triangles.Add(triangle);
-
                         if (distance != float.MaxValue)
                         {
                             if (!triangle.IntersectsAABB(lb, ub))
@@ -228,7 +215,7 @@ namespace SDFTool
                         int tempSign;
                         float dist = triangle.DistanceToPoint(point, out tempWeights, out tempResult, out tempSign);
 #else
-                        tempResult = PreparedTriangle.ClosetPointToTriangle(triangle, point, out tempWeights);
+                        tempResult = PreparedTriangle.ClosestPointToTriangle(triangle, point, out tempWeights);
                         Vector3 dir = point - tempResult;
                         float dist = Vector3.Dot(dir, dir);
 #endif
@@ -247,12 +234,13 @@ namespace SDFTool
                             sign = tempSign;
 #endif
                             result = tempResult;
-                            closestTriangle = triangle;
+                            triangleId = triangle.Id;
                         }
                     }
 
                 if (distance != float.MaxValue)
-                    localDist = distance / m_gridStep + 1.73205080757f / 2; // half of cubic root of two
+                    localDist = distance / m_gridStep + 0.63f; // half of cubic root of two
+                                                        // 1.73205080757f / 2; // half of square root of three
 
                 if (earlyExit)
                     break;
@@ -305,15 +293,6 @@ namespace SDFTool
             //}
 
             distance *= sign;
-
-            if (closestTriangle != null)
-            {
-                triangleId = closestTriangle.Id;
-                //distance = Math.Min(distance, Math.Abs(Vector3.Dot(closestTriangle.N, point - result))) * sign;
-                return true;
-            }
-
-            return false;
         }
 
         public int CountIntersections(Vector3 point, Vector3 dir)
@@ -323,12 +302,12 @@ namespace SDFTool
             Vector3 idir = new Vector3(1.0f / dir.X, 1.0f / dir.Y, 1.0f / dir.Z);
             Vector3 localPoint = (point - m_sceneMin) / m_gridStep;
 
-            Vector3 gridMax = new Vector3(m_gridx, m_gridy, m_gridz);
+            Vector3 gridMax = new Vector3(m_gridX, m_gridY, m_gridZ);
             float boundEnter;
             float boundExit;
             float lengthMax = gridMax.Length();
 
-            if (!SegmentBoundIntersection(new Vector3(0, 0, 0), new Vector3(m_gridx, m_gridy, m_gridz), localPoint, idir, lengthMax, out boundEnter, out boundExit))
+            if (!SegmentBoundIntersection(new Vector3(0, 0, 0), new Vector3(m_gridX, m_gridY, m_gridZ), localPoint, idir, lengthMax, out boundEnter, out boundExit))
                 return 0;
 
             Vector3 localEndPoint = localPoint + dir * boundExit;
@@ -337,10 +316,10 @@ namespace SDFTool
 
             ProcessRay(localPoint, localEndPoint, delegate (int index)
             {
-                if (m_triangles[index] == null)
+                if (m_grid[index] == null)
                     return;
 
-                foreach (var triangle in m_triangles[index])
+                foreach (var triangle in m_grid[index])
                     if (!triangles.Contains(triangle))
                     {
                         triangles.Add(triangle);
@@ -362,18 +341,18 @@ namespace SDFTool
             int fromTileX = (int)Math.Floor(Math.Max(from.X, 0));
             int fromTileY = (int)Math.Floor(Math.Max(from.Y, 0));
             int fromTileZ = (int)Math.Floor(Math.Max(from.Z, 0));
-            int toTileX = (int)Math.Floor(Math.Min(to.X, m_gridx - 1));
-            int toTileY = (int)Math.Floor(Math.Min(to.Y, m_gridy - 1));
-            int toTileZ = (int)Math.Floor(Math.Min(to.Z, m_gridz - 1));
+            int toTileX = (int)Math.Floor(Math.Min(to.X, m_gridX - 1));
+            int toTileY = (int)Math.Floor(Math.Min(to.Y, m_gridY - 1));
+            int toTileZ = (int)Math.Floor(Math.Min(to.Z, m_gridZ - 1));
             sbyte stepX = (sbyte)Math.Sign(toTileX - fromTileX);
             sbyte stepY = (sbyte)Math.Sign(toTileY - fromTileY);
             sbyte stepZ = (sbyte)Math.Sign(toTileZ - fromTileZ);
 
             if (stepX == 0 && stepY == 0 && stepZ == 0)
             {
-                if (fromTileX >= 0 && fromTileX < m_gridx && fromTileY >= 0 && fromTileY < m_gridy && fromTileZ >= 0 && fromTileZ < m_gridz)
+                if (fromTileX >= 0 && fromTileX < m_gridX && fromTileY >= 0 && fromTileY < m_gridY && fromTileZ >= 0 && fromTileZ < m_gridZ)
                 {
-                    int tindex = fromTileX + fromTileY * m_gridx + fromTileZ * m_gridx * m_gridy;
+                    int tindex = fromTileX + fromTileY * m_gridX + fromTileZ * m_gridX * m_gridY;
                     action(tindex);
                     return true;
                 }
@@ -416,15 +395,15 @@ namespace SDFTool
                     pointZ += deltaZ;
             }
 
-            int index = fromTileX + fromTileY * m_gridx + fromTileZ * m_gridx * m_gridy;
+            int index = fromTileX + fromTileY * m_gridX + fromTileZ * m_gridX * m_gridY;
 
-            int maxCount = Math.Max(Math.Max(m_gridx, m_gridy), m_gridz) + 2;
+            int maxCount = Math.Max(Math.Max(m_gridX, m_gridY), m_gridZ) + 2;
 
             while (--maxCount >= 0)
             {
-                if (fromTileX >= 0 && fromTileX < m_gridx &&
-                    fromTileY >= 0 && fromTileY < m_gridy &&
-                    fromTileZ >= 0 && fromTileZ < m_gridz)
+                if (fromTileX >= 0 && fromTileX < m_gridX &&
+                    fromTileY >= 0 && fromTileY < m_gridY &&
+                    fromTileZ >= 0 && fromTileZ < m_gridZ)
                 {
                     action(index);
                     //return true;
@@ -446,7 +425,7 @@ namespace SDFTool
                         break;
                     pointY += deltaY;
                     fromTileY += stepY;
-                    index += stepY * m_gridx;
+                    index += stepY * m_gridX;
                 }
                 else
                 {
@@ -454,7 +433,7 @@ namespace SDFTool
                         break;
                     pointZ += deltaZ;
                     fromTileZ += stepZ;
-                    index += stepZ * m_gridx * m_gridy;
+                    index += stepZ * m_gridX * m_gridY;
                 }
             }
 
@@ -604,13 +583,11 @@ namespace SDFTool
             int count = 0;
             int maxCount = sx * sy * sz;
 
-            Parallel.For(0, maxCount, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount / 2 },
-            (i) =>
+            Parallel.For(0, maxCount, i =>
             {
                 int iz = i / (sx * sy);
                 int iy = (i % (sx * sy)) / sx;
                 int ix = (i % (sx * sy)) % sx;
-
 
                 if (ix == 0 && iy == 0)
                 {
@@ -626,16 +603,17 @@ namespace SDFTool
 
                 float pixelDistance;
 
-                bool empty = !FindTriangles(point, out sceneDistance, out triangleWeights, out triangleId);
+                FindTriangles(point, out sceneDistance, out triangleWeights, out triangleId);
 
                 //pixelDistance = Math.Sign(sceneDistance) * Math.Min(Math.Abs(sceneDistance * sceneToPixels), 1.0f);
                 pixelDistance = sceneDistance * sceneToPixels;
 
+                int index = i * 4;
                 // distance in brick units [-1.0;1.0] where 1 corresponds to brick size
-                data[i * 4 + 0] = pixelDistance;
-                data[i * 4 + 1] = triangleWeights.X;
-                data[i * 4 + 2] = triangleWeights.Y;
-                data[i * 4 + 3] = triangleId;
+                data[index + 0] = pixelDistance;
+                data[index + 1] = triangleWeights.X;
+                data[index + 2] = triangleWeights.Y;
+                data[index + 3] = triangleId;
             }
             );
         }
