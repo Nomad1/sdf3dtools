@@ -43,6 +43,7 @@ find_package(OpenMP REQUIRED)
 # Add executable
 add_executable(process_model
     main.cpp
+    utils.cpp
     PreparedTriangle.cpp
     TriangleGrid.cpp
 )
