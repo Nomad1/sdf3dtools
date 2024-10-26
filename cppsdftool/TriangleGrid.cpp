@@ -221,6 +221,10 @@ void TriangleGrid::generateOrderedOffsets() {
                   });
 }
 
+int TriangleGrid::getTriangleCount() const {
+    return triangleCount;
+}
+
 std::vector<float> TriangleGrid::dispatch(const glm::vec3& lowerBound, float pixelsToScene,
                                         float sceneToPixels, int sx, int sy, int sz) {
     int maxCount = sx * sy * sz;
@@ -414,9 +418,10 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::vec3& p
         size_t index = x + y * gridX + z * gridX * gridY;
 
         // Early exit for isolated points
-        if (i >= 26 && localDist == std::numeric_limits<float>::infinity()) {
+        if (i >= 27 && localDist == std::numeric_limits<float>::infinity()) {
             earlyExit = true;
             result.distance = offsetLengths[i] * gridStep;
+            //result.point = m_sceneMin + glm::vec3(pointx + 0.5f, pointy + 0.5f, pointz + 0.5f) * m_gridStep;
             break;
         }
 

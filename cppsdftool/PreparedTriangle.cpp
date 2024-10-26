@@ -15,7 +15,7 @@ PreparedTriangle::PreparedTriangle(int id, const glm::vec3& a, const glm::vec3& 
     float area = glm::dot(n, n);
 
     // Calculate area and normalize normal vector
-    normalLength = std::max(std::sqrt(area), 1.0e-20f);
+    normalLength = std::max(std::sqrt(area), std::numeric_limits<float>::epsilon());
     this->n = n / normalLength;
     this->area = area / 2.0f;
 

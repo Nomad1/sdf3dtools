@@ -187,7 +187,7 @@ ProcessingMetadata processModel(const std::string& filename, const std::string& 
     currentTime = std::chrono::high_resolution_clock::now();
     elapsedDuration = currentTime - startTime;
     elapsed = std::chrono::duration<float>(elapsedDuration).count();
-    std::cout << "[" << formatDuration(elapsedDuration) << "] Triangle grid ready" << std::endl;
+    std::cout << "[" << formatDuration(elapsedDuration) << "] Triangle grid ready: " << triangleGrid.getTriangleCount() << std::endl;
 
     // Generate distance field
     auto distanceData = triangleGrid.dispatch(
@@ -196,6 +196,11 @@ ProcessingMetadata processModel(const std::string& filename, const std::string& 
         sceneToPixels / paddedTopLodCellSize,
         sx, sy, sz
     );
+
+    currentTime = std::chrono::high_resolution_clock::now();
+    elapsedDuration = currentTime - startTime;
+    elapsed = std::chrono::duration<float>(elapsedDuration).count();
+    std::cout << "[" << formatDuration(elapsedDuration) << "] Triangle grid " << std::endl;
 
     // Save to file
     std::ofstream outFile(outputFile, std::ios::binary);

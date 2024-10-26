@@ -25,7 +25,7 @@ public:
     FindTrianglesResult findTriangles(const glm::vec3& point);
     std::vector<float> dispatch(const glm::vec3& lowerBound, float pixelsToScene, 
                               float sceneToPixels, int sx, int sy, int sz);
-
+    int getTriangleCount() const;
 private:
     using GridCell = std::unique_ptr<std::vector<PreparedTriangle>>;
 
