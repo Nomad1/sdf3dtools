@@ -16,7 +16,6 @@
 #include "TriangleGrid.hpp"
 
 struct ProcessingMetadata {
-    float processingTime;
     glm::ivec3 gridDimensions;
     glm::vec3 sceneMin;
     glm::vec3 sceneMax;
@@ -25,8 +24,10 @@ struct ProcessingMetadata {
     size_t triangleCount;
 };
 
-std::string formatDuration(const std::chrono::high_resolution_clock::duration& duration) {
-    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(duration);
+std::string timestamp(std::chrono::steady_clock::time_point & startTime) {
+    auto currentTime = std::chrono::high_resolution_clock::now();
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - startTime);
+
     auto hours = std::chrono::duration_cast<std::chrono::hours>(ms);
     ms -= hours;
     auto minutes = std::chrono::duration_cast<std::chrono::minutes>(ms);
@@ -35,11 +36,12 @@ std::string formatDuration(const std::chrono::high_resolution_clock::duration& d
     ms -= seconds;
 
     std::stringstream ss;
-    ss << std::setfill('0') 
+    ss << "["
+       << std::setfill('0') 
        << std::setw(2) << hours.count() << ":"
        << std::setw(2) << minutes.count() << ":"
        << std::setw(2) << seconds.count() << "."
-       << std::setw(3) << ms.count();
+       << std::setw(3) << ms.count() << "] ";
     return ss.str();
 }
 
@@ -131,11 +133,62 @@ prepareScene(const std::string& filename, float scale, const std::vector<int>* s
     return {triangles, sceneMin, sceneMax};
 }
 
+const uint8_t KTX_Signature [] = { 0xAB, 0x4B, 0x54, 0x58, 0x20, 0x31, 0x31, 0xBB, 0x0D, 0x0A, 0x1A, 0x0A };
+const int KTX_FLOAT = 0x1406;
+const int KTX_R32F = 0x822E;
+
+class binary_ofstream : public std::ofstream {
+public:
+    using std::ofstream::ofstream;  // inherit constructors
+    
+    // Original write method
+    binary_ofstream& write(const char* data, std::streamsize count) {
+        std::ofstream::write(data, count);
+        return *this;
+    }
+    
+    // Template write for arithmetic types
+    template<typename T>
+    typename std::enable_if_t<std::is_arithmetic_v<T>, binary_ofstream&>
+    write(const T& value) {
+        std::ofstream::write(reinterpret_cast<const char*>(&value), sizeof(T));
+        return *this;
+    }
+};
+
+void saveKTX(int format, int width, int height, int depth, std::vector<float> & data, std::string outputFile) {
+    binary_ofstream writer(outputFile, std::ios::binary);
+    if (!writer) {
+        throw std::runtime_error("Failed to open output file: " + outputFile);
+    }
+
+    writer.write(reinterpret_cast<const char*>(KTX_Signature), sizeof(KTX_Signature));
+    writer.write(0x04030201);
+    writer.write(KTX_FLOAT);
+    writer.write(4); // raw size
+    writer.write(format); // raw format
+    writer.write(format); // format
+    writer.write(format); 
+    writer.write(width);
+    writer.write(height);
+    writer.write(depth);
+    writer.write(0); // elements
+    writer.write(1); // faces
+    writer.write(data.size()); // mipmaps
+    writer.write(0); // metadata
+    writer.write(data.size() * sizeof(float)); // current mipmap size
+
+    for (size_t i = 0; i < data.size(); i+=4)
+        writer.write(data[i]);
+
+    writer.close();
+}
+
 ProcessingMetadata processModel(const std::string& filename, const std::string& outputFile,
                               int pixels = 256, int topLodCellSize = 8, float scale = 1.0f,
                               const std::vector<int>* selectedIndices = nullptr) {
-    auto startTime = std::chrono::high_resolution_clock::now();
-    std::cout << "[00:00:00.000] Processing file " << filename << std::endl;
+    std::chrono::steady_clock::time_point startTime = std::chrono::high_resolution_clock::now();
+    std::cout << timestamp(startTime) << "Processing file " << filename << std::endl;
 
     // Load and prepare scene
     auto [triangles, sceneMin, sceneMax] = prepareScene(filename, scale, selectedIndices);
@@ -174,50 +227,38 @@ ProcessingMetadata processModel(const std::string& filename, const std::string& 
     glm::vec3 lowerBound = sceneMin - padding;
     glm::vec3 upperBound = sceneMax + padding;
 
-    auto currentTime = std::chrono::high_resolution_clock::now();
-    auto elapsedDuration = currentTime - startTime;
-    float elapsed = std::chrono::duration<float>(elapsedDuration).count();
-    std::cout << "[" << formatDuration(elapsedDuration) << "] File preprocessed. "
+    std::cout << timestamp(startTime) 
+              << "File preprocessed. "
               << "X: " << sx << ", Y: " << sy << ", Z: " << sz 
-              << ", maximum distance: " << maxSide << std::endl;
+              << ", maximum distance: " << maxSide 
+              << std::endl;
 
     // Create triangle grid
     TriangleGrid triangleGrid(sceneMin, sceneMax, sx / topLodCellSize + (sx % topLodCellSize != 0), sy / topLodCellSize+ (sy % topLodCellSize != 0), sz / topLodCellSize + (sz % topLodCellSize != 0), triangles);
 
-    currentTime = std::chrono::high_resolution_clock::now();
-    elapsedDuration = currentTime - startTime;
-    elapsed = std::chrono::duration<float>(elapsedDuration).count();
-    std::cout << "[" << formatDuration(elapsedDuration) << "] Triangle grid ready: " << triangleGrid.getTriangleCount() << std::endl;
+    std::cout << timestamp(startTime)
+              << "Triangle grid ready: " 
+              << triangleGrid.getTriangleCount() 
+              << std::endl;
 
     // Generate distance field
-    auto distanceData = triangleGrid.dispatch(
+    std::vector<float> distanceData = triangleGrid.dispatch(
         lowerBound,
         pixelsToScene,
         sceneToPixels / paddedTopLodCellSize,
         sx, sy, sz
     );
 
-    currentTime = std::chrono::high_resolution_clock::now();
-    elapsedDuration = currentTime - startTime;
-    elapsed = std::chrono::duration<float>(elapsedDuration).count();
-    std::cout << "[" << formatDuration(elapsedDuration) << "] Triangle grid " << std::endl;
+    std::cout << timestamp(startTime)
+              << "Triangle grid " << std::endl;
 
     // Save to file
-    std::ofstream outFile(outputFile, std::ios::binary);
-    if (!outFile) {
-        throw std::runtime_error("Failed to open output file: " + outputFile);
-    }
-    outFile.write(reinterpret_cast<const char*>(distanceData.data()), 
-                  distanceData.size() * sizeof(float));
-    outFile.close();
+    saveKTX(KTX_R32F, sx, sy, sz, distanceData, outputFile);
 
-    currentTime = std::chrono::high_resolution_clock::now();
-    elapsedDuration = currentTime - startTime;
-    elapsed = std::chrono::duration<float>(elapsedDuration).count();
-    std::cout << "[" << formatDuration(elapsedDuration) << "] Distance field saved to " << outputFile << std::endl;
+    std::cout << timestamp(startTime)
+              << "Distance field saved to " << outputFile << std::endl;
 
     return ProcessingMetadata{
-        elapsed,
         glm::ivec3(sx, sy, sz),
         sceneMin,
         sceneMax,
@@ -307,7 +348,6 @@ int main(int argc, char* argv[]) {
 
         // Print summary
         std::cout << "\nProcessing Summary:" << std::endl;
-        std::cout << "Time taken: " << metadata.processingTime << " seconds" << std::endl;
         std::cout << "Grid dimensions: " << metadata.gridDimensions.x << "x" 
                  << metadata.gridDimensions.y << "x" << metadata.gridDimensions.z << std::endl;
         std::cout << "Triangle count: " << metadata.triangleCount << std::endl;
