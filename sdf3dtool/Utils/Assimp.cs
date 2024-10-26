@@ -541,14 +541,12 @@ namespace SDFTool.Utils
 
             // temporary! Remove it
 
-            string file = (Path.GetFileNameWithoutExtension("out.sdf"));
+            float[] distances = new float[distanceData.Length / 4];
 
-            using (Stream stream = File.Open(file, FileMode.Create, FileAccess.Write, FileShare.None))
-            using (BinaryWriter writer = new BinaryWriter(stream))
-            {
-                foreach (float fdata in distanceData)
-                    writer.Write(fdata);
-            }
+            for (int i = 0, j = 0; i < distanceData.Length; i+=4, j++)
+                distances[j] = distanceData[i];
+
+            Ktx.SaveKTX(Ktx.KTX_R32F, sx, sy, sz, new float[][] { distances }, fileName);
 
             PixelData[] data = GetPixelData(distanceData, boneDictionary, triangleList);
 
