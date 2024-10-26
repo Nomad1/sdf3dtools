@@ -2,20 +2,6 @@
 
 namespace {
     // Pre-computed immediate neighbor offsets (26 adjacent cells)
-    const std::vector<glm::ivec3> NEIGHBOR_OFFSETS = {
-        // Same layer (z=0)
-        {-1, -1, 0}, {0, -1, 0}, {1, -1, 0},
-        {-1,  0, 0}, {0,  0, 0}, {1,  0, 0},
-        {-1,  1, 0}, {0,  1, 0}, {1,  1, 0},
-        // Layer below (z=-1)
-        {-1, -1, -1}, {0, -1, -1}, {1, -1, -1},
-        {-1,  0, -1}, {0,  0, -1}, {1,  0, -1},
-        {-1,  1, -1}, {0,  1, -1}, {1,  1, -1},
-        // Layer above (z=1)
-        {-1, -1, 1}, {0, -1, 1}, {1, -1, 1},
-        {-1,  0, 1}, {0,  0, 1}, {1,  0, 1},
-        {-1,  1, 1}, {0,  1, 1}, {1,  1, 1}
-    };
 
     bool rayBoundIntersection(const glm::vec3& lb, const glm::vec3& ub,
                             const glm::vec3& point, const glm::vec3& idir) {
@@ -184,41 +170,28 @@ TriangleGrid::TriangleGrid(const glm::vec3& sceneMin, const glm::vec3& sceneMax,
 }
 
 void TriangleGrid::generateOrderedOffsets() {
-    // Start with immediate neighbors
-    cellOffsets = NEIGHBOR_OFFSETS;
-    
-    // Generate additional offsets for larger grids
-    if (std::max({gridX, gridY, gridZ}) > 1) {
-        std::vector<glm::ivec3> additionalOffsets;
-        for (int z = -gridZ; z < gridZ; ++z) {
-            for (int y = -gridY; y < gridY; ++y) {
-                for (int x = -gridX; x < gridX; ++x) {
-                    if (std::max({std::abs(x), std::abs(y), std::abs(z)}) > 1) {
-                        additionalOffsets.emplace_back(x, y, z);
-                    }
-                }
+    std::vector<glm::ivec4> offsets;
+    for (int z = -gridZ; z < gridZ; ++z) {
+        for (int y = -gridY; y < gridY; ++y) {
+            for (int x = -gridX; x < gridX; ++x) {
+                    offsets.emplace_back(x, y, z, x * x + y * y + z * z);
             }
-        }
-
-        if (!additionalOffsets.empty()) {
-            // Sort by distance from center
-            std::sort(additionalOffsets.begin(), additionalOffsets.end(),
-                     [](const glm::ivec3& a, const glm::ivec3& b) {
-                         return glm::length(glm::vec3(a)) < glm::length(glm::vec3(b));
-                     });
-
-            // Combine with immediate neighbors
-            cellOffsets.insert(cellOffsets.end(), 
-                             additionalOffsets.begin(), additionalOffsets.end());
         }
     }
 
-    // Calculate offset lengths
-    offsetLengths.resize(cellOffsets.size());
-    std::transform(cellOffsets.begin(), cellOffsets.end(), offsetLengths.begin(),
-                  [](const glm::ivec3& offset) {
-                      return glm::length(glm::vec3(offset));
-                  });
+    // Sort by distance (fourth component)
+    std::sort(offsets.begin(), offsets.end(),
+        [](const glm::ivec4& a, const glm::ivec4& b) {
+            return a.w < b.w;
+        });
+
+    cellOffsets.reserve(offsets.size());
+    offsetLengths.reserve(offsets.size());
+
+    for (const auto& offset : offsets) {
+        cellOffsets.emplace_back(offset.x, offset.y, offset.z);
+        offsetLengths.push_back(std::sqrt(offset.w));
+    }
 }
 
 int TriangleGrid::getTriangleCount() const {
@@ -447,8 +420,9 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::vec3& p
                     lb = point - glm::vec3(result.distance);
                     ub = point + glm::vec3(result.distance);
                     
-                    result.weights = weights;
                     closestTriangle = &triangle;
+                    result.weights = weights;
+                    result.triangleId = triangle.getId();
                 }
             }
         }
@@ -488,6 +462,5 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::vec3& p
         result.distance *= (sign >= 0) ? 1.0f : -1.0f;
     }
 
-    result.triangleId = closestTriangle ? closestTriangle->getId() : -1;
     return result;
 }
