@@ -1,5 +1,4 @@
-﻿//#define DONT_USE_EARLY_EXIT
-//#define EXTRA_VECTORS
+﻿//#define EXTRA_VECTORS
 //#define GENERATE_UDF
 
 using System;
@@ -85,7 +84,6 @@ namespace SDFTool
 
                             int index = x + y * m_gridX + z * m_gridX * m_gridY;
 
-
                             if (triangles[index] == null)
                             {
                                 triangles[index] = new List<PreparedTriangle>();
@@ -125,20 +123,23 @@ namespace SDFTool
                     m_grid[i] = triangles[i].ToArray();
                 }
 
-            List<Vector3i> nibble = new List<Vector3i>();
+            List<Vector4i> nibble = new List<Vector4i>();
 
             for (int z = -m_gridZ; z < m_gridZ; z++)
                 for (int y = -m_gridY; y < m_gridY; y++)
                     for (int x = -m_gridX; x < m_gridX; x++)
-                        nibble.Add(new Vector3i(x, y, z));
+                        nibble.Add(new Vector4i(x, y, z, x * x + y * y + z * z));
 
-            nibble.Sort((x, y) => x.LengthSqrd.CompareTo(y.LengthSqrd));
+            nibble.Sort((x, y) => x.W.CompareTo(y.W));
 
-            m_cellOffsets = nibble.ToArray();
+            m_cellOffsets = new Vector3i[nibble.Count];
+            m_cellLengths = new float[nibble.Count];
 
-            m_cellLengths = new float[m_cellOffsets.Length];
             for (int i = 0; i < m_cellOffsets.Length; i++)
-                m_cellLengths[i] = (float)Math.Sqrt(m_cellOffsets[i].LengthSqrd);
+            {
+                m_cellOffsets[i] = new Vector3i(nibble[i].X, nibble[i].Y, nibble[i].Z);
+                m_cellLengths[i] = (float)Math.Sqrt(nibble[i].W);
+            }
         }
 
         public void FindTriangles(Vector3 point, out float distance, out Vector3 weights, out int triangleId)
@@ -184,14 +185,12 @@ namespace SDFTool
                 if (i >= 27 && localDist == float.MaxValue) // if this cell is solitary, meaning all neighbors are empty, we can just put in an average distance
                 {
                     earlyExit = true;
-#if !DONT_USE_EARLY_EXIT
                     distance = m_cellLengths[i] * m_gridStep;
                     result = m_sceneMin + new Vector3(pointx + 0.5f, pointy + 0.5f, pointz + 0.5f) * m_gridStep;
                     //if (weights.X < 0 || weights.Y < 0 || weights.Z < 0 || weights.X > 1 || weights.Y > 1 || weights.Z > 1)
                     //Console.WriteLine("Weights are invalid!");
                     //return false;
                     break;
-#endif
                 }
                 // empty cells
                 if (m_grid[index] == null)
@@ -312,7 +311,7 @@ namespace SDFTool
 
             Vector3 localEndPoint = localPoint + dir * boundExit;
            
-            HashSet<PreparedTriangle> triangles = new HashSet<PreparedTriangle>();
+            HashSet<int> triangles = new HashSet<int>();
 
             ProcessRay(localPoint, localEndPoint, delegate (int index)
             {
@@ -320,10 +319,8 @@ namespace SDFTool
                     return;
 
                 foreach (var triangle in m_grid[index])
-                    if (!triangles.Contains(triangle))
+                    if (triangles.Add(triangle.Id))
                     {
-                        triangles.Add(triangle);
-
                         if (!iRayBoundIntersection(triangle.LowerBound, triangle.UpperBound, point, idir))
                             continue;
 
