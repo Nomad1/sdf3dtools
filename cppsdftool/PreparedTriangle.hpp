@@ -6,10 +6,8 @@
 
 class PreparedTriangle {
 public:
-    static PreparedTriangle fromVertexArray(int id, const std::vector<glm::vec3>& vertices, 
-                                          int i1, int i2, int i3);
-
-    PreparedTriangle(int id, const glm::vec3& a, const glm::vec3& b, const glm::vec3& c);
+    PreparedTriangle(int id, const std::vector<glm::vec3>& vertices, 
+                                          int ia, int ib, int ic);
 
     std::pair<glm::vec3, glm::vec3> closestPointToTriangle(const glm::vec3& p) const;
     bool intersectsRay(const glm::vec3& p, const glm::vec3& dir) const;
@@ -26,9 +24,9 @@ public:
     const glm::vec3& getVertexA() const { return a; }
     const glm::vec3& getVertexB() const { return b; }
     const glm::vec3& getVertexC() const { return c; }
-
 private:
     int id;
+    int ia, ib, ic;
     glm::vec3 a, b, c;
     glm::vec3 n;
     glm::vec3 lowerBound, upperBound;

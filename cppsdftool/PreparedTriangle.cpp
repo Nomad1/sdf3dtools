@@ -3,13 +3,9 @@
 #include <limits>
 #include <algorithm>
 
-PreparedTriangle PreparedTriangle::fromVertexArray(int id, const std::vector<glm::vec3>& vertices, 
-                                                 int i1, int i2, int i3) {
-    return PreparedTriangle(id, vertices[i1], vertices[i2], vertices[i3]);
-}
-
-PreparedTriangle::PreparedTriangle(int id, const glm::vec3& a, const glm::vec3& b, const glm::vec3& c)
-    : id(id), a(a), b(b), c(c) {
+PreparedTriangle::PreparedTriangle(int id, const std::vector<glm::vec3>& vertices, 
+                                          int ia, int ib, int ic)
+    : id(id), ia(ia), ib(ib), ic(ic),a(vertices[ia]), b(vertices[ib]), c(vertices[ic])  {
     // Calculate normal vector
     glm::vec3 n = glm::cross(b - a, c - a);
     float area = glm::dot(n, n);

@@ -31,7 +31,7 @@ private:
 
     bool processRay(const glm::vec3& fromPoint, const glm::vec3& toPoint, 
                    const std::function<void(size_t)>& action);
-    int countIntersections(const glm::vec3& point, const glm::vec3& dir);
+    int countIntersections(const glm::vec3& point, const glm::vec3& dir, int exceptTriangle = -1);
     void generateOrderedOffsets();
 
     glm::vec3 sceneMin;

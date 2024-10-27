@@ -84,7 +84,7 @@ prepareScene(const std::string& filename, float scale, const std::vector<int>* s
         for (unsigned int i = 0; i < mesh->mNumFaces; ++i) {
             const aiFace& face = mesh->mFaces[i];
             if (face.mNumIndices == 3) {
-                triangles.push_back(PreparedTriangle::fromVertexArray(
+                triangles.push_back(PreparedTriangle(
                     triangleIdx++,
                     vertices,
                     face.mIndices[0],

@@ -227,7 +227,7 @@ std::vector<float> TriangleGrid::dispatch(const glm::vec3& lowerBound, float pix
     return result;
 }
 
-int TriangleGrid::countIntersections(const glm::vec3& point, const glm::vec3& dir) {
+int TriangleGrid::countIntersections(const glm::vec3& point, const glm::vec3& dir, int exceptTriangle) {
     int count = 0;
     glm::vec3 idir = glm::vec3(
         dir.x != 0 ? 1.0f / dir.x : std::numeric_limits<float>::infinity(),
@@ -248,6 +248,8 @@ int TriangleGrid::countIntersections(const glm::vec3& point, const glm::vec3& di
     glm::vec3 localEndPoint = localPoint + dir * boundExit;
 
     std::set<int> triangles;
+
+    triangles.insert(exceptTriangle);
 
     auto processCell = [&](size_t index) {
         if (!grid[index]) return;
@@ -371,7 +373,7 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::vec3& p
     int pointY = static_cast<int>(std::floor(localPoint.y));
     int pointZ = static_cast<int>(std::floor(localPoint.z));
 
-    std::set<const PreparedTriangle*> triangles;
+    std::set<int> triangles;
     float localDist = std::numeric_limits<float>::infinity();
     glm::vec3 lb(0.0f), ub(0.0f);
     bool earlyExit = false;
@@ -401,12 +403,11 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::vec3& p
             break;
         }
 
-        if (!grid[index]) {
+        if (!grid[index] || !grid[index]->size())
             continue;
-        }
 
         for (const auto& triangle : *grid[index]) {
-            if (triangles.insert(&triangle).second) {
+            if (triangles.insert(triangle.getId()).second) {
                 if (result.distance != std::numeric_limits<float>::infinity()) {
                     if (!triangle.intersectsAABB(lb, ub)) continue;
                     if (!triangle.intersectsSphere(point, result.distance)) continue;
@@ -440,25 +441,53 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::vec3& p
 
     // Determine sign using ray casting
     if (!earlyExit && closestTriangle) {
-        glm::vec3 direction = glm::normalize(point - resultPoint);
-
-        std::vector<glm::vec3> testDirections = {
-            direction,
-            {0, 0, 1}, {1, 0, 0}, {0, 1, 0},
-            {0, 0, -1}, {-1, 0, 0}, {0, -1, 0}
-        };
-
         int sign = 0;
-        for (const auto& dir : testDirections) {
-            if (std::isnan(direction.x) || std::isnan(direction.y) || std::isnan(direction.z)) {
-                direction = glm::normalize(point - glm::vec3(0.5f, 0.5f, 0.5f));
+
+// #ifndef SIX_POINT_INSIDE_CHECK
+        // int normalSign = closestTriangle->getNormalSign();
+        // if (normalSign == 0) {
+        //     normalSign = (countIntersections(closestTriangle->getVertexA(), closestTriangle->getNormal(), closestTriangle->getId()) % 2 == 0) ? 1 : -1;
+        //     closestTriangle->setNormalSign(normalSign);
+        // }
+        
+         float projection = glm::dot(closestTriangle->getNormal(), point - closestTriangle->getVertexA());
+         sign = glm::sign(projection);// * normalSign;// >= 0 ? 1: - 1;//-normalSign : normalSign;
+//#else
+
+        if (result.weights.x <= 0 || result.weights.y <= 0 || result.weights.z <= 0) {
+            glm::vec3 direction = glm::normalize(point - resultPoint);
+
+            sign = 0;
+
+            // int except = -1;
+
+            // if (std::isnan(direction.x) || std::isnan(direction.y) || std::isnan(direction.z)) {
+            //     direction = closestTriangle->getNormal();
+            //     //glm::normalize(point - glm::vec3(0.5f, 0.5f, 0.5f));
+            //     except = closestTriangle->getId();
+            // }
+
+            // sign += (countIntersections(point, direction, except) % 2 == 0) ? 1 : -1;
+            // sign += (countIntersections(point, -direction, except) % 2 != 0) ? 1 : -1;
+
+            std::vector<glm::vec3> testDirections = {
+                {0, 0, 1}, {1, 0, 0}, {0, 1, 0},
+                {0, 0, -1}, {-1, 0, 0}, {0, -1, 0},
+            };
+
+            if (!(std::isnan(direction.x) || std::isnan(direction.y) || std::isnan(direction.z))) {
+                testDirections.push_back(direction);
+                testDirections.push_back(-direction);
             }
 
-            sign += (countIntersections(point, dir) % 2 == 0) ? 1 : -1;
-            if (std::abs(sign) >= static_cast<int>(testDirections.size()) / 2 + 1) {
-                break;
+            for (const auto& dir : testDirections) {
+                sign += (countIntersections(point, dir) % 2 == 0) ? 1 : -1;
+                if (std::abs(sign) >= static_cast<int>(testDirections.size()) / 2 + 1) {
+                    break;
+                }
             }
         }
+// #endif
 
         result.distance *= (sign >= 0) ? 1.0f : -1.0f;
     }
