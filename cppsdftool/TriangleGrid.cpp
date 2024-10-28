@@ -410,10 +410,10 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::vec3& p
 
         for (const auto& triangle : *grid[index]) {
             if (triangles.insert(triangle.getId()).second) {
-                // if (result.distance != std::numeric_limits<float>::infinity()) {
-                //     if (!triangle.intersectsAABB(lb, ub)) continue;
-                //     if (!triangle.intersectsSphere(point, result.distance)) continue;
-                // }
+                if (result.distance != std::numeric_limits<float>::infinity()) {
+                    if (!triangle.intersectsAABB(lb, ub)) continue;
+                    if (!triangle.intersectsSphere(point, result.distance)) continue;
+                }
 
                 auto [closestPoint, weights, normal, code] = triangle.closestPointToTriangle(point);
                 glm::vec3 dir = point - closestPoint;
