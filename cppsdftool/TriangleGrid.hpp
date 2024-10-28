@@ -19,8 +19,8 @@ public:
     };
 
     TriangleGrid(const glm::vec3& sceneMin, const glm::vec3& sceneMax,
-                 int gridX, int gridY, int gridZ,
-                 const std::vector<PreparedTriangle>& triangles);
+                int gridX, int gridY, int gridZ,
+                const std::vector<PreparedTriangle>& triangles);
 
     FindTrianglesResult findTriangles(const glm::vec3& point);
     std::vector<float> dispatch(const glm::vec3& lowerBound, float pixelsToScene, 
@@ -31,12 +31,13 @@ private:
 
     bool processRay(const glm::vec3& fromPoint, const glm::vec3& toPoint, 
                    const std::function<void(size_t)>& action);
-    int countIntersections(const glm::vec3& point, const glm::vec3& dir, int exceptTriangle = -1);
+    int countIntersections(const glm::vec3& point, const glm::vec3& dir);
     void generateOrderedOffsets();
 
     glm::vec3 sceneMin;
     float gridStep;
-    int gridX, gridY, gridZ;
+    glm::ivec3 gridSize;
+    glm::ivec3 gridIndex;
     int triangleCount;
     int triangleInstances;
     int cellsUsed;

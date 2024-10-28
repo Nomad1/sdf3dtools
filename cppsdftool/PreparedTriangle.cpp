@@ -100,21 +100,12 @@ bool PreparedTriangle::intersectsRay(const glm::vec3& p, const glm::vec3& dir) c
 
     proj = 1.0f / proj;
     glm::vec3 pa = p - a;
-    float u = glm::dot(pa, h) * proj;
-
-    if (u < 0.0f || u > 1.0f) {
-        return false;
-    }
-
     glm::vec3 q = glm::cross(pa, ba);
+    float u = glm::dot(pa, h) * proj;
     float v = glm::dot(dir, q) * proj;
-
-    if (v < 0.0f || u + v > 1.0f) {
-        return false;
-    }
-
     float t = glm::dot(ca, q) * proj;
-    return t >= 0.0f;
+
+    return u >= 0.0f && u <= 1.0f && v >= 0.0f && u+v <= 1.0f && t >= 0.0f;
 }
 
 bool PreparedTriangle::intersectsAABB(const glm::vec3& lb, const glm::vec3& ub) const {

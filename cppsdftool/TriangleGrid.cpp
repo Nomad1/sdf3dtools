@@ -94,12 +94,16 @@ namespace {
 
         return {true, resultEnter, resultExit};
     }
+
+    int idot(const glm::ivec3 & a, const glm::ivec3 & b) {
+        return a.x*b.x + a.y*b.y + a.z*b.z;
+    }
 }
 
 TriangleGrid::TriangleGrid(const glm::vec3& sceneMin, const glm::vec3& sceneMax,
                           int gridX, int gridY, int gridZ,
                           const std::vector<PreparedTriangle>& triangles)
-    : sceneMin(sceneMin), gridX(gridX), gridY(gridY), gridZ(gridZ) {
+    : sceneMin(sceneMin), gridSize(gridX, gridY, gridZ), gridIndex(1, gridX, gridX * gridY) {
     
     gridStep = std::max(
         std::max((sceneMax.x - sceneMin.x) / gridX,
@@ -142,7 +146,7 @@ TriangleGrid::TriangleGrid(const glm::vec3& sceneMin, const glm::vec3& sceneMax,
                         continue;
                     }
 
-                    size_t index = x + y * gridX + z * gridX * gridY;
+                    int index = idot(glm::ivec3(x, y, z), gridIndex);
 
                     if (!grid[index]) {
                         grid[index] = std::make_unique<std::vector<PreparedTriangle>>();
@@ -171,9 +175,9 @@ TriangleGrid::TriangleGrid(const glm::vec3& sceneMin, const glm::vec3& sceneMax,
 
 void TriangleGrid::generateOrderedOffsets() {
     std::vector<glm::ivec4> offsets;
-    for (int z = -gridZ; z < gridZ; ++z) {
-        for (int y = -gridY; y < gridY; ++y) {
-            for (int x = -gridX; x < gridX; ++x) {
+    for (int z = -gridSize.z; z < gridSize.z; ++z) {
+        for (int y = -gridSize.y; y < gridSize.y; ++y) {
+            for (int x = -gridSize.x; x < gridSize.x; ++x) {
                     offsets.emplace_back(x, y, z, x * x + y * y + z * z);
             }
         }
@@ -227,7 +231,7 @@ std::vector<float> TriangleGrid::dispatch(const glm::vec3& lowerBound, float pix
     return result;
 }
 
-int TriangleGrid::countIntersections(const glm::vec3& point, const glm::vec3& dir, int exceptTriangle) {
+int TriangleGrid::countIntersections(const glm::vec3& point, const glm::vec3& dir) {
     int count = 0;
     glm::vec3 idir = glm::vec3(
         dir.x != 0 ? 1.0f / dir.x : std::numeric_limits<float>::infinity(),
@@ -237,7 +241,7 @@ int TriangleGrid::countIntersections(const glm::vec3& point, const glm::vec3& di
 
     // Convert to grid coordinates
     glm::vec3 localPoint = (point - sceneMin) / gridStep;
-    glm::vec3 gridMax(gridX, gridY, gridZ);
+    glm::vec3 gridMax(gridSize);
     float lengthMax = glm::length(gridMax);
 
     auto [intersects, boundEnter, boundExit] = segmentBoundIntersection(
@@ -248,8 +252,6 @@ int TriangleGrid::countIntersections(const glm::vec3& point, const glm::vec3& di
     glm::vec3 localEndPoint = localPoint + dir * boundExit;
 
     std::set<int> triangles;
-
-    triangles.insert(exceptTriangle);
 
     auto processCell = [&](size_t index) {
         if (!grid[index]) return;
@@ -269,22 +271,22 @@ int TriangleGrid::countIntersections(const glm::vec3& point, const glm::vec3& di
     };
 
     processRay(localPoint, localEndPoint, processCell);
+    
     return count;
 }
 
 bool TriangleGrid::processRay(const glm::vec3& fromPoint, const glm::vec3& toPoint,
                             const std::function<void(size_t)>& action) {
     glm::ivec3 fromTile = glm::floor(glm::max(fromPoint, glm::vec3(0.0f)));
-    glm::ivec3 toTile = glm::floor(glm::min(toPoint, 
-        glm::vec3(gridX - 1, gridY - 1, gridZ - 1)));
+    glm::ivec3 toTile = glm::floor(glm::min(toPoint, glm::vec3(gridSize - 1)));
 
     glm::ivec3 step = glm::sign(glm::vec3(toTile - fromTile));
 
     // Handle case when ray stays in one cell
     if (glm::all(glm::equal(step, glm::ivec3(0)))) {
         if (glm::all(glm::greaterThanEqual(fromTile, glm::ivec3(0))) &&
-            glm::all(glm::lessThan(fromTile, glm::ivec3(gridX, gridY, gridZ)))) {
-            size_t index = fromTile.x + fromTile.y * gridX + fromTile.z * gridX * gridY;
+            glm::all(glm::lessThan(fromTile, gridSize))) {
+            size_t index = idot(fromTile, gridIndex);
             action(index);
             return true;
         }
@@ -315,16 +317,18 @@ bool TriangleGrid::processRay(const glm::vec3& fromPoint, const glm::vec3& toPoi
 
     // Initialize current position
     glm::ivec3 current = fromTile;
-    size_t index = current.x + current.y * gridX + current.z * gridX * gridY;
+    size_t index = idot(current, gridIndex);
 
     // Process cells along ray
-    int maxSteps = std::max({gridX, gridY, gridZ}) + 2;
+    int maxSteps = std::max({gridSize.x, gridSize.y, gridSize.z}) * 4;
+
+    const int indexOffset [] = { step.x, step.y * gridSize.x, step.z * gridSize.x * gridSize.y };
 
     while (maxSteps > 0) {
         maxSteps--;
 
         if (glm::all(glm::greaterThanEqual(current, glm::ivec3(0))) &&
-            glm::all(glm::lessThan(current, glm::ivec3(gridX, gridY, gridZ)))) {
+            glm::all(glm::lessThan(current, gridSize))) {
             action(index);
         } else {
             break;
@@ -348,13 +352,14 @@ bool TriangleGrid::processRay(const glm::vec3& fromPoint, const glm::vec3& toPoi
         point[nextCross] += delta[nextCross];
         current[nextCross] += step[nextCross];
 
-        if (nextCross == 0) index += step.x;
-        else if (nextCross == 1) index += step.y * gridX;
-        else index += step.z * gridX * gridY;
+        index += indexOffset[nextCross];
     }
 
     return false;
 }
+
+const float SQRT3 = std::sqrt(3);
+const float SQRT2 = std::sqrt(2);
 
 TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::vec3& point) {
     FindTrianglesResult result;
@@ -371,9 +376,7 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::vec3& p
 
     // Convert point to grid coordinates
     glm::vec3 localPoint = (point - sceneMin) / gridStep;
-    int pointX = static_cast<int>(std::floor(localPoint.x));
-    int pointY = static_cast<int>(std::floor(localPoint.y));
-    int pointZ = static_cast<int>(std::floor(localPoint.z));
+    glm::ivec3 ipoint(glm::floor(localPoint));
 
     std::set<int> triangles;
     float localDist = std::numeric_limits<float>::infinity();
@@ -387,21 +390,19 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::vec3& p
         }
 
         const auto& offset = cellOffsets[i];
-        int x = pointX + offset.x;
-        int y = pointY + offset.y;
-        int z = pointZ + offset.z;
+        glm::ivec3 p = ipoint + offset;
 
-        if (x < 0 || x >= gridX || y < 0 || y >= gridY || z < 0 || z >= gridZ) {
+        if (!(glm::all(glm::greaterThanEqual(p, glm::ivec3(0))) &&
+            glm::all(glm::lessThan(p, gridSize))))
             continue;
-        }
 
-        size_t index = x + y * gridX + z * gridX * gridY;
+        size_t index = idot(p, gridIndex);
 
         // Early exit for isolated points
         if (i >= 27 && localDist == std::numeric_limits<float>::infinity()) {
             earlyExit = true;
             result.distance = cellOffsetLengths[i] * gridStep;
-            resultPoint = sceneMin + glm::vec3(pointX + 0.5f, pointY + 0.5f, pointZ + 0.5f) * gridStep;
+            resultPoint = sceneMin + (glm::vec3(ipoint) + 0.5f) * gridStep;
             break;
         }
 
@@ -449,15 +450,15 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::vec3& p
     if (!earlyExit && resultTriangle) {
         int sign = 0;
 
-    if (resultCode == 0) // only when point is over the triangle 
-    {
-         float projection = glm::dot(resultNormal, glm::normalize(point - resultPoint));
-         sign = projection >= 0 ? 1: - 1;
-    }
-    else 
+    glm::vec3 direction = glm::normalize(point - resultPoint);
+    // if (resultCode == 0) // only when point is over the triangle 
+    // {
+    //      float projection = glm::dot(resultNormal, direction);
+    //      sign = projection >= 0 ? 1: - 1;
+    // }
+    // else 
     {
         // if (result.weights.x <= 0 || result.weights.y <= 0 || result.weights.z <= 0) {
-            //glm::vec3 direction = glm::normalize(point - resultPoint);
 
             // sign = 0;
 
@@ -474,12 +475,17 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::vec3& p
 
 
             std::vector<glm::vec3> testDirections = {
+                direction,
+                -direction,
                 {0, 0, 1}, {1, 0, 0}, {0, 1, 0},
                 {0, 0, -1}, {-1, 0, 0}, {0, -1, 0},
+                {SQRT3, SQRT3, SQRT3}, {SQRT3, -SQRT3, SQRT3}, {-SQRT3, SQRT3, SQRT3},
             };
 
             for (const auto& dir : testDirections) {
-                sign += (countIntersections(point, dir) % 2 == 0) ? 1 : -1;
+                int count = countIntersections(point, dir);
+                sign += (count % 2 == 0) ? 1 : -1;
+
                 if (std::abs(sign) >= static_cast<int>(testDirections.size()) / 2 + 1) {
                     break;
                 }
