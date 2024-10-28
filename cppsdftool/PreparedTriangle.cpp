@@ -11,7 +11,7 @@ PreparedTriangle::PreparedTriangle(int id, const std::vector<glm::vec3>& vertice
     float area = glm::dot(n, n);
 
     // Calculate area and normalize normal vector
-    normalLength = std::max(std::sqrt(area), std::numeric_limits<float>::epsilon());
+    normalLength = std::sqrt(area);// std::max(std::sqrt(area), 1e-20f);
     this->n = n / normalLength;
     this->area = area / 2.0f;
 
@@ -30,7 +30,16 @@ PreparedTriangle::PreparedTriangle(int id, const std::vector<glm::vec3>& vertice
     upperBound = glm::max(glm::max(a, b), c);
 }
 
-std::pair<glm::vec3, glm::vec3> PreparedTriangle::closestPointToTriangle(const glm::vec3& p) const {
+void PreparedTriangle::setPseudoNormals(const glm::vec3& van, const glm::vec3& vbn, const glm::vec3& vcn, const glm::vec3& eab, const glm::vec3& ebc, const glm::vec3& eac) {
+    this->van = van;
+    this->vbn = vbn;
+    this->vcn = vcn;
+    this->eab = eab;
+    this->ebc = ebc;
+    this->eac = eac;
+}
+
+std::tuple<glm::vec3, glm::vec3, glm::vec3, int> PreparedTriangle::closestPointToTriangle(const glm::vec3& p) const {
     float snom = glm::dot(p - a, b - a);
     float sdenom = glm::dot(p - b, a - b);
     float tnom = glm::dot(p - a, c - a);
@@ -40,42 +49,43 @@ std::pair<glm::vec3, glm::vec3> PreparedTriangle::closestPointToTriangle(const g
 
     // Check vertices
     if (snom <= 0.0f && tnom <= 0.0f) {
-        return {a, glm::vec3(1.0f, 0.0f, 0.0f)};
+        return {a, glm::vec3(1.0f, 0.0f, 0.0f), van, 1};
     }
 
     if (sdenom <= 0.0f && unom <= 0.0f) {
-        return {b, glm::vec3(0.0f, 1.0f, 0.0f)};
+        return {b, glm::vec3(0.0f, 1.0f, 0.0f), vbn, 2};
     }
 
     if (tdenom <= 0.0f && udenom <= 0.0f) {
-        return {c, glm::vec3(0.0f, 0.0f, 1.0f)};
+        return {c, glm::vec3(0.0f, 0.0f, 1.0f), vcn, 3};
     }
 
     // Check edges
     float coordsPab = glm::dot(n, glm::cross(a - p, b - p));
     if (coordsPab <= 0.0f && snom >= 0.0f && sdenom >= 0.0f) {
         float nab = snom / (snom + sdenom);
-        return {a + (b - a) * nab, glm::vec3(1.0f - nab, nab, 0.0f)};
+        return {a * (1.0f - nab) + b * nab, glm::vec3(1.0f - nab, nab, 0.0f), eab, 4};
     }
 
     float coordsPbc = glm::dot(n, glm::cross(b - p, c - p));
     if (coordsPbc <= 0.0f && unom >= 0.0f && udenom >= 0.0f) {
         float nbc = unom / (unom + udenom);
-        return {b + (c - b) * nbc, glm::vec3(0.0f, 1.0f - nbc, nbc)};
+        return {b * (1.0f - nbc) + c * nbc, glm::vec3(0.0f, 1.0f - nbc, nbc), ebc, 5};
     }
 
     float coordsPca = glm::dot(n, glm::cross(c - p, a - p));
     if (coordsPca <= 0.0f && tnom >= 0.0f && tdenom >= 0.0f) {
         float nca = tnom / (tnom + tdenom);
-        return {a + (c - a) * nca, glm::vec3(nca, 0.0f, 1.0f - nca)};
+        return {a * nca + c * (1.0f - nca), glm::vec3(nca, 0.0f, 1.0f - nca), eac, 6};
     }
 
     // Point is inside triangle
     float denom = coordsPab + coordsPbc + coordsPca;
     float u = coordsPbc / denom;
     float v = coordsPca / denom;
-    glm::vec3 weights(u, v, 1.0f - u - v);
-    return {a * weights.x + b * weights.y + c * weights.z, weights};
+    float w = coordsPab / denom;
+    glm::vec3 weights(u, v, w);
+    return {a * weights.x + b * weights.y + c * weights.z, weights, n, 0};
 }
 
 bool PreparedTriangle::intersectsRay(const glm::vec3& p, const glm::vec3& dir) const {
@@ -84,7 +94,7 @@ bool PreparedTriangle::intersectsRay(const glm::vec3& p, const glm::vec3& dir) c
     glm::vec3 h = glm::cross(dir, ca);
     float proj = glm::dot(ba, h);
 
-    if (std::abs(proj) < std::numeric_limits<float>::epsilon()) {
+    if (std::abs(proj) < 1e-20f) {
         return false;
     }
 

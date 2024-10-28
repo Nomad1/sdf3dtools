@@ -80,18 +80,71 @@ prepareScene(const std::string& filename, float scale, const std::vector<int>* s
 
         triangles.reserve(mesh->mNumFaces);
 
+        std::unordered_map<uint64_t, glm::vec3> edgeNormals;
+
+        std::vector<glm::vec3> vertexNormals;
+        vertexNormals.reserve(mesh->mNumVertices);
+
+        // helper method
+        auto addEdgeNormal = [&](const int i, const int j, const glm::vec3& normal) {
+            const uint64_t key = ((uint64_t)std::min(i, j) << 32) + (uint64_t)std::max(i, j);
+            
+            auto [it, inserted] = edgeNormals.try_emplace(key, normal);
+            
+            if (!inserted) {
+                // Key exists, add the new value to existing value
+                it->second = glm::normalize(it->second + normal);
+            }
+        };
+
+        auto getEdgeNormal = [&](const int i, const int j) {
+            const uint64_t key = ((uint64_t)std::min(i, j) << 32) + (uint64_t)std::max(i, j);
+            return edgeNormals.find(key)->second;
+        };
+
         // Create triangles
         for (unsigned int i = 0; i < mesh->mNumFaces; ++i) {
             const aiFace& face = mesh->mFaces[i];
             if (face.mNumIndices == 3) {
-                triangles.push_back(PreparedTriangle(
+
+                int a = face.mIndices[0];
+                int b = face.mIndices[1];
+                int c = face.mIndices[2];
+
+                auto& triangle = triangles.emplace_back(
                     triangleIdx++,
                     vertices,
-                    face.mIndices[0],
-                    face.mIndices[1],
-                    face.mIndices[2]
-                ));
+                    a, b, c
+                );
+
+                // Vertex
+                const float alpha_0 = glm::acos(glm::dot(glm::normalize(triangle.getVertexB() - triangle.getVertexA()), glm::normalize(triangle.getVertexC() - triangle.getVertexA())));
+                const float alpha_1 = glm::acos(glm::dot(glm::normalize(triangle.getVertexA() - triangle.getVertexB()), glm::normalize(triangle.getVertexC() - triangle.getVertexB())));
+                const float alpha_2 = glm::acos(glm::dot(glm::normalize(triangle.getVertexB() - triangle.getVertexC()), glm::normalize(triangle.getVertexA() - triangle.getVertexC())));
+
+                vertexNormals[a] += alpha_0 * triangle.getNormal();
+                vertexNormals[b] += alpha_1 * triangle.getNormal();
+                vertexNormals[c] += alpha_2 * triangle.getNormal();
+
+                // Edge
+                addEdgeNormal(a, b, triangle.getNormal());
+                addEdgeNormal(b, c, triangle.getNormal());
+                addEdgeNormal(a, c, triangle.getNormal());
             }
+        }
+
+        for (size_t i = 0; i < vertexNormals.size(); i++) {
+		    vertexNormals[i] = glm::normalize(vertexNormals[i]);
+	    }
+
+        for (auto & triangle : triangles) {
+            int a = triangle.getIndexA();
+            int b = triangle.getIndexB();
+            int c = triangle.getIndexC();
+
+            triangle.setPseudoNormals(
+                vertexNormals[a], vertexNormals[b], vertexNormals[c],
+                getEdgeNormal(a, b), getEdgeNormal(b, c), getEdgeNormal(a, c));
         }
     }
 

@@ -43,5 +43,5 @@ private:
 
     std::vector<GridCell> grid;
     std::vector<glm::ivec3> cellOffsets;
-    std::vector<float> offsetLengths;
+    std::vector<float> cellOffsetLengths;
 };

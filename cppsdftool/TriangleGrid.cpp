@@ -186,11 +186,11 @@ void TriangleGrid::generateOrderedOffsets() {
         });
 
     cellOffsets.reserve(offsets.size());
-    offsetLengths.reserve(offsets.size());
+    cellOffsetLengths.reserve(offsets.size());
 
     for (const auto& offset : offsets) {
         cellOffsets.emplace_back(offset.x, offset.y, offset.z);
-        offsetLengths.push_back(std::sqrt(offset.w));
+        cellOffsetLengths.push_back(std::sqrt(offset.w));
     }
 }
 
@@ -363,9 +363,11 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::vec3& p
     result.weights = glm::vec3(0.0f);
 
     glm::vec3 resultPoint;
+    glm::vec3 resultNormal;
 
     float minDistanceSqrd = std::numeric_limits<float>::infinity();
-    const PreparedTriangle* closestTriangle = nullptr;
+    const PreparedTriangle* resultTriangle = nullptr;
+    int resultCode = 0;
 
     // Convert point to grid coordinates
     glm::vec3 localPoint = (point - sceneMin) / gridStep;
@@ -380,7 +382,7 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::vec3& p
 
     // Check cells in order of increasing distance
     for (size_t i = 0; i < cellOffsets.size(); ++i) {
-        if (offsetLengths[i] > localDist) {
+        if (cellOffsetLengths[i] > localDist) {
             break;
         }
 
@@ -398,22 +400,22 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::vec3& p
         // Early exit for isolated points
         if (i >= 27 && localDist == std::numeric_limits<float>::infinity()) {
             earlyExit = true;
-            result.distance = offsetLengths[i] * gridStep;
+            result.distance = cellOffsetLengths[i] * gridStep;
             resultPoint = sceneMin + glm::vec3(pointX + 0.5f, pointY + 0.5f, pointZ + 0.5f) * gridStep;
             break;
         }
 
-        if (!grid[index] || !grid[index]->size())
+        if (!grid[index])
             continue;
 
         for (const auto& triangle : *grid[index]) {
             if (triangles.insert(triangle.getId()).second) {
-                if (result.distance != std::numeric_limits<float>::infinity()) {
-                    if (!triangle.intersectsAABB(lb, ub)) continue;
-                    if (!triangle.intersectsSphere(point, result.distance)) continue;
-                }
+                // if (result.distance != std::numeric_limits<float>::infinity()) {
+                //     if (!triangle.intersectsAABB(lb, ub)) continue;
+                //     if (!triangle.intersectsSphere(point, result.distance)) continue;
+                // }
 
-                auto [closestPoint, weights] = triangle.closestPointToTriangle(point);
+                auto [closestPoint, weights, normal, code] = triangle.closestPointToTriangle(point);
                 glm::vec3 dir = point - closestPoint;
                 float dist = glm::dot(dir, dir);
 
@@ -424,8 +426,12 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::vec3& p
                     lb = point - glm::vec3(result.distance);
                     ub = point + glm::vec3(result.distance);
                     
-                    closestTriangle = &triangle;
-                    resultPoint = point;
+                    resultTriangle = &triangle;
+
+                    resultPoint = closestPoint;
+                    resultNormal = normal;
+                    resultCode = code;
+
                     result.weights = weights;
                     result.triangleId = triangle.getId();
                 }
@@ -440,24 +446,20 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::vec3& p
     }
 
     // Determine sign using ray casting
-    if (!earlyExit && closestTriangle) {
+    if (!earlyExit && resultTriangle) {
         int sign = 0;
 
-// #ifndef SIX_POINT_INSIDE_CHECK
-        // int normalSign = closestTriangle->getNormalSign();
-        // if (normalSign == 0) {
-        //     normalSign = (countIntersections(closestTriangle->getVertexA(), closestTriangle->getNormal(), closestTriangle->getId()) % 2 == 0) ? 1 : -1;
-        //     closestTriangle->setNormalSign(normalSign);
-        // }
-        
-         float projection = glm::dot(closestTriangle->getNormal(), point - closestTriangle->getVertexA());
-         sign = glm::sign(projection);// * normalSign;// >= 0 ? 1: - 1;//-normalSign : normalSign;
-//#else
+    if (resultCode == 0) // only when point is over the triangle 
+    {
+         float projection = glm::dot(resultNormal, glm::normalize(point - resultPoint));
+         sign = projection >= 0 ? 1: - 1;
+    }
+    else 
+    {
+        // if (result.weights.x <= 0 || result.weights.y <= 0 || result.weights.z <= 0) {
+            //glm::vec3 direction = glm::normalize(point - resultPoint);
 
-        if (result.weights.x <= 0 || result.weights.y <= 0 || result.weights.z <= 0) {
-            glm::vec3 direction = glm::normalize(point - resultPoint);
-
-            sign = 0;
+            // sign = 0;
 
             // int except = -1;
 
@@ -467,18 +469,14 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::vec3& p
             //     except = closestTriangle->getId();
             // }
 
-            // sign += (countIntersections(point, direction, except) % 2 == 0) ? 1 : -1;
-            // sign += (countIntersections(point, -direction, except) % 2 != 0) ? 1 : -1;
+            // sign += (countIntersections(point, direction) % 2 == 0) ? 1 : -1;
+            // sign += (countIntersections(point, -direction) % 2 == 0) ? 1 : -1;
+
 
             std::vector<glm::vec3> testDirections = {
                 {0, 0, 1}, {1, 0, 0}, {0, 1, 0},
                 {0, 0, -1}, {-1, 0, 0}, {0, -1, 0},
             };
-
-            if (!(std::isnan(direction.x) || std::isnan(direction.y) || std::isnan(direction.z))) {
-                testDirections.push_back(direction);
-                testDirections.push_back(-direction);
-            }
 
             for (const auto& dir : testDirections) {
                 sign += (countIntersections(point, dir) % 2 == 0) ? 1 : -1;
@@ -487,7 +485,6 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::vec3& p
                 }
             }
         }
-// #endif
 
         result.distance *= (sign >= 0) ? 1.0f : -1.0f;
     }
