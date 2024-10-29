@@ -1,7 +1,6 @@
 #include <iostream>
 #include <filesystem>
 #include <glm/glm.hpp>
-#include <glm/gtc/type_ptr.hpp>
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
@@ -11,10 +10,10 @@
 
 struct ProcessingMetadata {
     glm::ivec3 gridDimensions;
-    glm::vec3 sceneMin;
-    glm::vec3 sceneMax;
-    float sceneToPixels;
-    float pixelsToScene;
+    glm::dvec3 sceneMin;
+    glm::dvec3 sceneMax;
+    double sceneToPixels;
+    double pixelsToScene;
     size_t triangleCount;
 };
 
@@ -41,11 +40,11 @@ void printModelInfo(const std::string& filename) {
     std::cout << std::endl;
 }
 
-std::tuple<std::vector<PreparedTriangle>, glm::vec3, glm::vec3> 
-prepareScene(const std::string& filename, float scale, const std::vector<int>* selectedIndices) {
+std::tuple<std::vector<PreparedTriangle>, glm::dvec3, glm::dvec3> 
+prepareScene(const std::string& filename, double scale, const std::vector<int>* selectedIndices) {
     std::vector<PreparedTriangle> triangles;
-    glm::vec3 sceneMin(std::numeric_limits<float>::infinity());
-    glm::vec3 sceneMax(-std::numeric_limits<float>::infinity());
+    glm::dvec3 sceneMin(std::numeric_limits<double>::infinity());
+    glm::dvec3 sceneMax(-std::numeric_limits<double>::infinity());
 
     Assimp::Importer importer;
     const aiScene* scene = importer.ReadFile(filename,
@@ -64,13 +63,13 @@ prepareScene(const std::string& filename, float scale, const std::vector<int>* s
         }
 
         const aiMesh* mesh = scene->mMeshes[meshIdx];
-        std::vector<glm::vec3> vertices;
+        std::vector<glm::dvec3> vertices;
         vertices.reserve(mesh->mNumVertices);
 
         // Convert vertices
         for (unsigned int i = 0; i < mesh->mNumVertices; ++i) {
             const auto& v = mesh->mVertices[i];
-            glm::vec3 vertex(v.x * scale, v.y * scale, v.z * scale);
+            glm::dvec3 vertex(v.x * scale, v.y * scale, v.z * scale);
             vertices.push_back(vertex);
 
             // Update scene bounds
@@ -80,13 +79,13 @@ prepareScene(const std::string& filename, float scale, const std::vector<int>* s
 
         triangles.reserve(mesh->mNumFaces);
 
-        std::unordered_map<uint64_t, glm::vec3> edgeNormals;
+        std::unordered_map<uint64_t, glm::dvec3> edgeNormals;
 
-        std::vector<glm::vec3> vertexNormals;
+        std::vector<glm::dvec3> vertexNormals;
         vertexNormals.reserve(mesh->mNumVertices);
 
         // helper method
-        auto addEdgeNormal = [&](const int i, const int j, const glm::vec3& normal) {
+        auto addEdgeNormal = [&](const int i, const int j, const glm::dvec3& normal) {
             const uint64_t key = ((uint64_t)std::min(i, j) << 32) + (uint64_t)std::max(i, j);
             
             auto [it, inserted] = edgeNormals.try_emplace(key, normal);
@@ -100,6 +99,16 @@ prepareScene(const std::string& filename, float scale, const std::vector<int>* s
         auto getEdgeNormal = [&](const int i, const int j) {
             const uint64_t key = ((uint64_t)std::min(i, j) << 32) + (uint64_t)std::max(i, j);
             return edgeNormals.find(key)->second;
+        };
+
+        auto corner = [](
+            const glm::dvec3 & x, 
+            const glm::dvec3 & y, 
+            const glm::dvec3 & z)
+        {
+            auto v1 = x - y;
+            auto v2 = z - y;
+            return 2.0 * glm::atan(glm::length(v1/glm::length(v1) - v2/glm::length(v2)), glm::length((v1/glm::length(v1) + v2/glm::length(v2))));
         };
 
         // Create triangles
@@ -118,9 +127,9 @@ prepareScene(const std::string& filename, float scale, const std::vector<int>* s
                 );
 
                 // Vertex
-                const float alpha_0 = glm::acos(glm::dot(glm::normalize(triangle.getVertexB() - triangle.getVertexA()), glm::normalize(triangle.getVertexC() - triangle.getVertexA())));
-                const float alpha_1 = glm::acos(glm::dot(glm::normalize(triangle.getVertexA() - triangle.getVertexB()), glm::normalize(triangle.getVertexC() - triangle.getVertexB())));
-                const float alpha_2 = glm::acos(glm::dot(glm::normalize(triangle.getVertexB() - triangle.getVertexC()), glm::normalize(triangle.getVertexA() - triangle.getVertexC())));
+                const double alpha_0 = corner(triangle.getVertexB(), triangle.getVertexA(), triangle.getVertexC());
+                const double alpha_1 = corner(triangle.getVertexA(), triangle.getVertexB(), triangle.getVertexC());
+                const double alpha_2 = corner(triangle.getVertexB(), triangle.getVertexC(), triangle.getVertexA());
 
                 vertexNormals[a] += alpha_0 * triangle.getNormal();
                 vertexNormals[b] += alpha_1 * triangle.getNormal();
@@ -152,7 +161,7 @@ prepareScene(const std::string& filename, float scale, const std::vector<int>* s
 }
 
 ProcessingMetadata processModel(const std::string& filename, const std::string& outputFile,
-                              int pixels = 256, int topLodCellSize = 8, float scale = 1.0f,
+                              int pixels = 256, int topLodCellSize = 8, double scale = 1.0,
                               const std::vector<int>* selectedIndices = nullptr) {
     std::cout   << timestamp()
                 << "Processing file "
@@ -163,7 +172,7 @@ ProcessingMetadata processModel(const std::string& filename, const std::string& 
     auto [triangles, sceneMin, sceneMax] = prepareScene(filename, scale, selectedIndices);
     
     // Calculate scene dimensions
-    float maxSide = std::max({
+    double maxSide = std::max({
         sceneMax.z - sceneMin.z,
         sceneMax.y - sceneMin.y,
         sceneMax.x - sceneMin.x
@@ -173,8 +182,8 @@ ProcessingMetadata processModel(const std::string& filename, const std::string& 
     int paddedTopLodCellSize = topLodCellSize;
     topLodCellSize -= 1;
 
-    float sceneToPixels = pixels / maxSide;
-    float pixelsToScene = 1.0f / sceneToPixels;
+    double sceneToPixels = pixels / maxSide;
+    double pixelsToScene = 1.0 / sceneToPixels;
 
     // Calculate grid dimensions
     int sx = static_cast<int>(std::ceil((sceneMax.x - sceneMin.x) * sceneToPixels));
@@ -191,10 +200,10 @@ ProcessingMetadata processModel(const std::string& filename, const std::string& 
     sz += padz + 1;
 
     // Calculate bounds with padding
-    glm::vec3 padding(padx, pady, padz);
-    padding *= pixelsToScene * 0.5f;
-    glm::vec3 lowerBound = sceneMin - padding;
-    // glm::vec3 upperBound = sceneMax + padding;
+    glm::dvec3 padding(padx, pady, padz);
+    padding *= pixelsToScene * 0.5;
+    glm::dvec3 lowerBound = sceneMin - padding;
+    // glm::dvec3 upperBound = sceneMax + padding;
 
     std::cout   << timestamp() 
                 << "File preprocessed. "
@@ -215,7 +224,7 @@ ProcessingMetadata processModel(const std::string& filename, const std::string& 
                 << std::endl;
 
     // Generate distance field
-    std::vector<float> distanceData = triangleGrid.dispatch(
+    std::vector<double> distanceData = triangleGrid.dispatch(
         lowerBound,
         pixelsToScene,
         sceneToPixels / paddedTopLodCellSize,
@@ -228,7 +237,9 @@ ProcessingMetadata processModel(const std::string& filename, const std::string& 
                 << std::endl;
 
     // Save to file
-    saveKTX(KTX_R32F, (uint)sx, (uint)sy, (uint)sz, distanceData, outputFile, 4);
+    std::vector<float> floatData(distanceData.begin(), distanceData.end());
+
+    saveKTX(KTX_R32F, (uint)sx, (uint)sy, (uint)sz, floatData, outputFile, 4);
 
     std::cout   << timestamp()
                 << "Distance field saved to " 
@@ -265,7 +276,7 @@ int main(int argc, char* argv[]) {
 
         std::string inputFile;
         std::string outputFile;
-        float scale = 1.0f;
+        double scale = 1.0f;
         int pixels = 256;
         int topLodCellSize = 8;
         std::vector<int> selectedIndices;

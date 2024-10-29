@@ -1,7 +1,6 @@
 #pragma once
 
 #include <glm/glm.hpp>
-#include <glm/gtc/type_ptr.hpp>
 #include <vector>
 #include <memory>
 #include <cmath>
@@ -13,29 +12,30 @@
 class TriangleGrid {
 public:
     struct FindTrianglesResult {
-        float distance;
-        glm::vec3 weights;
+        double distance;
+        glm::dvec3 weights;
         int triangleId;
     };
 
-    TriangleGrid(const glm::vec3& sceneMin, const glm::vec3& sceneMax,
+    TriangleGrid(const glm::dvec3& sceneMin, const glm::dvec3& sceneMax,
                 int gridX, int gridY, int gridZ,
                 const std::vector<PreparedTriangle>& triangles);
 
-    FindTrianglesResult findTriangles(const glm::vec3& point);
-    std::vector<float> dispatch(const glm::vec3& lowerBound, float pixelsToScene, 
-                              float sceneToPixels, int sx, int sy, int sz);
+    FindTrianglesResult findTriangles(const glm::dvec3& point);
+    std::vector<double> dispatch(const glm::dvec3& lowerBound, double pixelsToScene, 
+                              double sceneToPixels, int sx, int sy, int sz);
     int getTriangleCount() const;
 private:
     using GridCell = std::unique_ptr<std::vector<PreparedTriangle>>;
 
-    bool processRay(const glm::vec3& fromPoint, const glm::vec3& toPoint, 
-                   const std::function<void(size_t)>& action);
-    int countIntersections(const glm::vec3& point, const glm::vec3& dir);
+    bool processRay(const glm::dvec3& fromPoint, const glm::dvec3& toPoint, 
+                   const std::function<void(int)>& action);
+    int countIntersections(const glm::dvec3& point, const glm::dvec3& dir);
     void generateOrderedOffsets();
 
-    glm::vec3 sceneMin;
-    float gridStep;
+    glm::dvec3 sceneMin;
+    glm::dvec3 sceneMax;
+    double gridStep;
     glm::ivec3 gridSize;
     glm::ivec3 gridIndex;
     int triangleCount;
@@ -43,6 +43,8 @@ private:
     int cellsUsed;
 
     std::vector<GridCell> grid;
+    std::vector<float> emptyCells;
+
     std::vector<glm::ivec3> cellOffsets;
-    std::vector<float> cellOffsetLengths;
+    std::vector<double> cellOffsetLengths;
 };
