@@ -55,74 +55,6 @@ namespace
         return tmin <= tzmax && tmax >= tzmin;
     }
 
-    std::tuple<bool, double, double> segmentBoundIntersection(
-        const glm::dvec3 &lb, const glm::dvec3 &ub,
-        const glm::dvec3 &point, const glm::dvec3 &idir, double length)
-    {
-
-        double resultEnter = 0.0;
-        double resultExit = length;
-        double tmin, tmax, tymin, tymax, tzmin, tzmax;
-
-        if (idir.x >= 0)
-        {
-            tmin = (lb.x - point.x) * idir.x;
-            tmax = (ub.x - point.x) * idir.x;
-        }
-        else
-        {
-            tmin = (ub.x - point.x) * idir.x;
-            tmax = (lb.x - point.x) * idir.x;
-        }
-
-        if (idir.y >= 0)
-        {
-            tymin = (lb.y - point.y) * idir.y;
-            tymax = (ub.y - point.y) * idir.y;
-        }
-        else
-        {
-            tymin = (ub.y - point.y) * idir.y;
-            tymax = (lb.y - point.y) * idir.y;
-        }
-
-        if (tmin > tymax || tmax < tymin)
-            return {false, resultEnter, resultExit};
-
-        tmin = std::max(tmin, tymin);
-        tmax = std::min(tmax, tymax);
-
-        if (idir.z >= 0)
-        {
-            tzmin = (lb.z - point.z) * idir.z;
-            tzmax = (ub.z - point.z) * idir.z;
-        }
-        else
-        {
-            tzmin = (ub.z - point.z) * idir.z;
-            tzmax = (lb.z - point.z) * idir.z;
-        }
-
-        if (tmin > tzmax || tmax < tzmin)
-            return {false, resultEnter, resultExit};
-
-        tmin = std::max(tmin, tzmin);
-        tmax = std::min(tmax, tzmax);
-
-        if (tmin <= 0 && tmax >= length)
-            return {true, resultEnter, resultExit};
-
-        if (tmax < 0 || tmin > length)
-            return {false, resultEnter, resultExit};
-
-        if (tmin > 0)
-            resultEnter = tmin;
-        if (tmax < length)
-            resultExit = tmax;
-
-        return {true, resultEnter, resultExit};
-    }
-
     int idot(const glm::ivec3 &a, const glm::ivec3 &b)
     {
         return a.x * b.x + a.y * b.y + a.z * b.z;
@@ -151,11 +83,14 @@ TriangleGrid::TriangleGrid(const glm::dvec3 &sceneMin, const glm::dvec3 &sceneMa
     // Generate ordered cell offsets
     generateOrderedOffsets();
 
+    // Generate directions for inside/outside raycasting check
+    generateRandomDirections();
+
     // Distribute triangles to grid cells
     for (const auto &triangle : triangles)
     {
-        if (triangle.getArea() < 1e-20)
-            continue;
+        //if (triangle.getArea() < 1e-20)
+          //  continue;
 
         glm::dvec3 lb = (triangle.getLowerBound() - sceneMin) / gridStep;
         int fromX = std::max(static_cast<int>(std::floor(lb.x)), 0);
@@ -246,6 +181,23 @@ void TriangleGrid::generateOrderedOffsets()
     }
 }
 
+void TriangleGrid::generateRandomDirections()
+{
+    // Fixed seed
+    srand(42); // Use any fixed number as seed
+
+    for (int i = 0; i < 5; i++)
+    {
+        // Generate random coords between -1 and 1
+        double x = (rand() / double(RAND_MAX)) * 2.0 - 1.0;
+        double y = (rand() / double(RAND_MAX)) * 2.0 - 1.0;
+        double z = (rand() / double(RAND_MAX)) * 2.0 - 1.0;
+
+        glm::dvec3 dir(x, y, z);
+        directions.push_back(glm::normalize(dir));
+    }
+}
+
 int TriangleGrid::getTriangleCount() const
 {
     return triangleCount;
@@ -292,15 +244,13 @@ int TriangleGrid::countIntersections(const glm::dvec3 &point, const glm::dvec3 &
     // Convert to grid coordinates
     glm::dvec3 localPoint = (point - sceneMin) / gridStep;
     // glm::dvec3 gridMax(gridSize);
-//    double lengthMax = glm::length(gridMax);
+    //    double lengthMax = glm::length(gridMax);
 
     // auto [intersects, boundEnter, boundExit] = segmentBoundIntersection(
-        // glm::dvec3(0), gridMax, localPoint, idir, lengthMax);
-
-        
+    // glm::dvec3(0), gridMax, localPoint, idir, lengthMax);
 
     // if (!intersects)
-        // return 0;
+    // return 0;
 
     // glm::dvec3 localEndPoint = localPoint + dir * boundExit;
 
@@ -319,14 +269,10 @@ int TriangleGrid::countIntersections(const glm::dvec3 &point, const glm::dvec3 &
             {
                 if (!rayBoundIntersection(triangle.getLowerBound(),
                                           triangle.getUpperBound(), point, idir))
-                {
                     continue;
-                }
 
                 if (triangle.intersectsRay(point, dir))
-                {
                     count++;
-                }
             }
         }
     };
@@ -340,13 +286,6 @@ bool TriangleGrid::processRay(const glm::dvec3 &fromPoint, const glm::dvec3 &dir
                               const std::function<void(int)> &action)
 {
     glm::ivec3 fromTile = glm::max((glm::ivec3)glm::floor(fromPoint), glm::ivec3(0));
-    // glm::ivec3 toTile = glm::min((glm::ivec3)glm::floor(toPoint), gridSize - 1);
-
-    // Handle case when ray stays in one cell
-    // if (glm::all(glm::equal(toTile, fromTile))) {
-        // action(idot(fromTile, gridIndex));
-        // return true;
-    //}
 
     // Calculate normalized direction
     const glm::ivec3 step = glm::sign(dir);
@@ -370,7 +309,7 @@ bool TriangleGrid::processRay(const glm::dvec3 &fromPoint, const glm::dvec3 &dir
     int index = idot(current, gridIndex);
 
     // Process cells along ray
-    int maxSteps = std::max({gridSize.x, gridSize.y, gridSize.z}) * 4;
+    int maxSteps = gridSize.x + gridSize.y + gridSize.z;
 
     const int indexOffset[] = {step.x, step.y * gridSize.x, step.z * gridSize.x * gridSize.y};
 
@@ -412,83 +351,6 @@ bool TriangleGrid::processRay(const glm::dvec3 &fromPoint, const glm::dvec3 &dir
 
     return false;
 }
-/*
-bool TriangleGrid::processRay(const glm::dvec3& startGrid, const glm::dvec3& endGrid, 
-                             const std::function<void(int)>& action) {
-    // Calculate direction and length
-    glm::dvec3 dir = endGrid - startGrid;
-    double length = glm::length(dir);
-    
-    if (length < 0.0001) {
-        // Handle case where points are very close
-        int idx = idot((glm::ivec3)glm::floor(startGrid), gridIndex);
-        action(idx);
-        return true;
-    }
-
-    // Normalize direction
-    dir /= length;
-
-    // Calculate step size
-    glm::dvec3 tDelta = glm::dvec3(
-        1.0 / std::abs(dir.x),
-        1.0 / std::abs(dir.y),
-        1.0 / std::abs(dir.z)
-    );
-
-    // Current cell coordinates
-    int x = static_cast<int>(floor(startGrid.x));
-    int y = static_cast<int>(floor(startGrid.y));
-    int z = static_cast<int>(floor(startGrid.z));
-
-    // Step direction for each axis
-    int stepX = dir.x >= 0 ? 1 : -1;
-    int stepY = dir.y >= 0 ? 1 : -1;
-    int stepZ = dir.z >= 0 ? 1 : -1;
-
-    // Calculate initial tMax values
-    glm::dvec3 tMax(
-        tDelta.x * (dir.x >= 0 ? (1.0 - (startGrid.x - floor(startGrid.x))) 
-                               : (startGrid.x - floor(startGrid.x))),
-        tDelta.y * (dir.y >= 0 ? (1.0 - (startGrid.y - floor(startGrid.y))) 
-                               : (startGrid.y - floor(startGrid.y))),
-        tDelta.z * (dir.z >= 0 ? (1.0 - (startGrid.z - floor(startGrid.z))) 
-                               : (startGrid.z - floor(startGrid.z)))
-    );
-
-    // Traverse the grid
-    while (length > 0) {
-        // Call the provided action with the current cell index
-        int idx = idot(glm::ivec3(x,y,z), gridIndex);
-        action(idx);
-
-        // Find axis with minimal tMax
-        if (tMax.x < tMax.y) {
-            if (tMax.x < tMax.z) {
-                x += stepX;
-                tMax.x += tDelta.x;
-            } else {
-                z += stepZ;
-                tMax.z += tDelta.z;
-            }
-        } else {
-            if (tMax.y < tMax.z) {
-                y += stepY;
-                tMax.y += tDelta.y;
-            } else {
-                z += stepZ;
-                tMax.z += tDelta.z;
-            }
-        }
-
-        length -= 1.0;
-    }
-
-    return true;
-}*/
-
-const double SQRT3 = std::sqrt(3);
-const double SQRT2 = std::sqrt(2);
 
 TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::dvec3 &point)
 {
@@ -513,7 +375,8 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::dvec3 &
 
     auto emptyValue = emptyCells[idot(ipoint, gridIndex)];
 
-    if (!std::isinf(emptyValue)) {
+    if (!std::isinf(emptyValue))
+    {
         result.distance = emptyValue;
         return result;
     }
@@ -527,9 +390,7 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::dvec3 &
     for (size_t i = 0; i < cellOffsets.size(); ++i)
     {
         if (cellOffsetLengths[i] > localDist)
-        {
             break;
-        }
 
         const auto &offset = cellOffsets[i];
         glm::ivec3 p = ipoint + offset;
@@ -590,8 +451,9 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::dvec3 &
 
         if (!std::isinf(result.distance))
         {
-            localDist = result.distance / gridStep + std::sqrt(2.0) / 2.0;
-            //std::sqrt(3.0) / 2.0;
+            localDist = result.distance / gridStep + 
+                                                    //std::sqrt(2.0) / 2.0;
+                                                    std::sqrt(3.0) / 2.0;
         }
 
         if (earlyExit)
@@ -601,62 +463,36 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::dvec3 &
     // Determine sign using ray casting
     int sign = 0;
 
-    glm::dvec3 direction = point - resultPoint;
-
-    if (resultCode != -1) // only when point is over the triangle
+    // if (resultCode == 0) // only when point is over the triangle
+    // {
+    //     double projection = glm::dot(resultNormal, point - resultPoint);
+    //     sign = projection >= 0 ? 1 : -1;
+    // } else
     {
-        double projection = glm::dot(resultNormal, direction);
-        sign = projection >= 0 ? 1 : -1;
-    } else
-    {
-        // if (result.weights.x <= 0 || result.weights.y <= 0 || result.weights.z <= 0) {
+        // glm::dvec3 toCenter = glm::normalize(point - ((sceneMax + sceneMin) * 0.5));
 
-        // sign = 0;
-
-        // int except = -1;
-
-        // if (std::isnan(direction.x) || std::isnan(direction.y) || std::isnan(direction.z)) {
-        //     direction = closestTriangle->getNormal();
-        //     //glm::normalize(point - glm::dvec3(0.5, 0.5, 0.5));
-        //     except = closestTriangle->getId();
-        // }
-
-        // sign += (countIntersections(point, direction) % 2 == 0) ? 1 : -1;
-        // sign += (countIntersections(point, -direction) % 2 == 0) ? 1 : -1;
-
-        std::vector<glm::dvec3> testDirections = {
-            glm::normalize(point - ((sceneMax + sceneMin) * 0.5)),
-            {0, 0, 1},
-            {1, 0, 0},
-            {0, 1, 0},
-            {0, 0, -1},
-            {-1, 0, 0},
-            {0, -1, 0},
-            // {SQRT3, SQRT3, SQRT3}, {SQRT3, -SQRT3, SQRT3}, {-SQRT3, SQRT3, SQRT3},
-            // {SQRT3, SQRT3, -SQRT3}, {SQRT3, -SQRT3, -SQRT3}, {-SQRT3, SQRT3, -SQRT3},
-        };
-
-        for (const auto &dir : testDirections)
+        for (const auto &dir : directions)
         {
             int count = countIntersections(point, dir);
             sign += (count % 2 == 0) ? 1 : -1;
 
-            if (earlyExit || std::abs(sign) >= static_cast<int>(testDirections.size()) / 2 + 1)
+            if (/*earlyExit || */std::abs(sign) >= static_cast<int>(directions.size()) / 2 + 1)
             {
                 // if (earlyExit) {
-                    // std::cout << "Early exit for point [" << glm::to_string(point) << "], intersection count " << count << ", sign " << sign << std::endl;
+                // std::cout << "Early exit for point [" << glm::to_string(point) << "], intersection count " << count << ", sign " << sign << std::endl;
                 // }
                 break;
             }
-        }
 
+            if (count != 0)
+                break;
+        }
     }
 
     result.distance *= (sign >= 0) ? 1.0 : -1.0;
 
-    if (earlyExit) {
+    if (earlyExit)
         emptyCells[idot(ipoint, gridIndex)] = result.distance;
-    }
 
     return result;
 }

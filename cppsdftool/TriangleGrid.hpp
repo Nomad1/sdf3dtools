@@ -32,6 +32,7 @@ private:
                    const std::function<void(int)>& action);
     int countIntersections(const glm::dvec3& point, const glm::dvec3& dir);
     void generateOrderedOffsets();
+    void generateRandomDirections();
 
     glm::dvec3 sceneMin;
     glm::dvec3 sceneMax;
@@ -47,4 +48,6 @@ private:
 
     std::vector<glm::ivec3> cellOffsets;
     std::vector<double> cellOffsetLengths;
+
+    std::vector<glm::dvec3> directions;
 };

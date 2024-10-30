@@ -48,7 +48,7 @@ prepareScene(const std::string& filename, double scale, const std::vector<int>* 
 
     Assimp::Importer importer;
     const aiScene* scene = importer.ReadFile(filename,
-        aiProcess_Triangulate | aiProcess_JoinIdenticalVertices);
+        aiProcess_Triangulate/* | aiProcess_JoinIdenticalVertices*/);
 
     if (!scene) {
         throw std::runtime_error("Failed to load model: " + std::string(importer.GetErrorString()));
@@ -203,7 +203,7 @@ ProcessingMetadata processModel(const std::string& filename, const std::string& 
     glm::dvec3 padding(padx, pady, padz);
     padding *= pixelsToScene * 0.5;
     glm::dvec3 lowerBound = sceneMin - padding;
-    // glm::dvec3 upperBound = sceneMax + padding;
+    glm::dvec3 upperBound = sceneMax + padding;
 
     std::cout   << timestamp() 
                 << "File preprocessed. "
@@ -212,7 +212,7 @@ ProcessingMetadata processModel(const std::string& filename, const std::string& 
                 << std::endl;
 
     // Create triangle grid
-    TriangleGrid triangleGrid(sceneMin, sceneMax,
+    TriangleGrid triangleGrid(lowerBound, upperBound,
         sx / topLodCellSize + (sx % topLodCellSize != 0),
         sy / topLodCellSize+ (sy % topLodCellSize != 0),
         sz / topLodCellSize + (sz % topLodCellSize != 0),

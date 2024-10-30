@@ -10,7 +10,7 @@ PreparedTriangle::PreparedTriangle(int id, const std::vector<glm::dvec3>& vertic
     area = glm::dot(n, n);
 
     // Calculate area and normalize normal vector
-    normalLength = std::max(std::sqrt(area), 1e-20);
+    normalLength = std::max(std::sqrt(area), 1e-40);
     n /= normalLength;
     area = area / 2.0;
 
