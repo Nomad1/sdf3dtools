@@ -9,7 +9,7 @@
 class PreparedTriangle {
 public:
     PreparedTriangle(int id, const std::vector<glm::dvec3>& vertices, 
-                                          int ia, int ib, int ic);
+                                          size_t ia, size_t ib, size_t ic);
 
     std::tuple<glm::dvec3, glm::dvec3, glm::dvec3, int> closestPointToTriangle(const glm::dvec3& p) const;
     bool intersectsRay(const glm::dvec3& p, const glm::dvec3& dir) const;
@@ -27,17 +27,17 @@ public:
     const glm::dvec3& getVertexA() const { return a; }
     const glm::dvec3& getVertexB() const { return b; }
     const glm::dvec3& getVertexC() const { return c; }    
-    int getIndexA() const { return ia; }
-    int getIndexB() const { return ib; }
-    int getIndexC() const { return ic; }    
+    size_t getIndexA() const { return ia; }
+    size_t getIndexB() const { return ib; }
+    size_t getIndexC() const { return ic; }    
 private:
     int id;
-    int ia, ib, ic;
+    size_t ia, ib, ic;
     glm::dvec3 a, b, c;
     glm::dvec3 n;
     glm::dvec3 van, vbn, vcn, eab, ebc, eac;
-    glm::dvec3 lowerBound, upperBound;
-    double normalLength;
+    glm::dvec3 lowerBound, upperBound, center;
+    //double normalLength;
     double area;
     double radius;
 };

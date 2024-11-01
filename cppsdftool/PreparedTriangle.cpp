@@ -3,19 +3,20 @@
 #include <algorithm>
 
 PreparedTriangle::PreparedTriangle(int id, const std::vector<glm::dvec3>& vertices, 
-                                          int ia, int ib, int ic)
+                                          size_t ia, size_t ib, size_t ic)
     : id(id), ia(ia), ib(ib), ic(ic),a(vertices[ia]), b(vertices[ib]), c(vertices[ic])  {
     // Calculate normal vector
     n = glm::cross(b - a, c - a);
     area = glm::dot(n, n);
 
+
     // Calculate area and normalize normal vector
-    normalLength = std::max(std::sqrt(area), 1e-40);
+    double normalLength = std::max(std::sqrt(area), std::numeric_limits<double>::epsilon());
     n /= normalLength;
     area = area / 2.0;
 
     // Calculate center and radius
-    glm::dvec3 center = (a + b + c) / 3.0;
+    center = (a + b + c) / 3.0;
     radius = std::sqrt(std::max(
         glm::dot(a - center, a - center),
         std::max(
@@ -93,7 +94,7 @@ bool PreparedTriangle::intersectsRay(const glm::dvec3& p, const glm::dvec3& dir)
     glm::dvec3 h = glm::cross(dir, ca);
     double proj = glm::dot(ba, h);
 
-    if (glm::abs(proj) < 1e-20)
+    if (glm::abs(proj) < std::numeric_limits<double>::epsilon())
         return false;
 
     proj = 1.0 / proj;
@@ -112,7 +113,6 @@ bool PreparedTriangle::intersectsAABB(const glm::dvec3& lb, const glm::dvec3& ub
 }
 
 bool PreparedTriangle::intersectsSphere(const glm::dvec3& point, double radius) const {
-    glm::dvec3 center = (a + b + c) / 3.0;
     double distance = glm::length(point - center);
     return distance < radius + this->radius;
 }
@@ -122,9 +122,9 @@ bool PreparedTriangle::planeIntersectsAABB(const glm::dvec3& lb, const glm::dvec
         return false;
     }
 
-    glm::dvec3 center = (ub + lb) / 2.0;
-    glm::dvec3 e = ub - center;
+    glm::dvec3 pcenter = (ub + lb) / 2.0;
+    glm::dvec3 e = ub - pcenter;
     double r = glm::dot(e, glm::abs(n));
-    double s = glm::dot(n, center) - glm::dot(n, a);
+    double s = glm::dot(n, pcenter) - glm::dot(n, a);
     return std::abs(s) <= r;
 }

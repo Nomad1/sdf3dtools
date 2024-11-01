@@ -89,9 +89,6 @@ TriangleGrid::TriangleGrid(const glm::dvec3 &sceneMin, const glm::dvec3 &sceneMa
     // Distribute triangles to grid cells
     for (const auto &triangle : triangles)
     {
-        //if (triangle.getArea() < 1e-20)
-          //  continue;
-
         glm::dvec3 lb = (triangle.getLowerBound() - sceneMin) / gridStep;
         int fromX = std::max(static_cast<int>(std::floor(lb.x)), 0);
         int fromY = std::max(static_cast<int>(std::floor(lb.y)), 0);
@@ -136,7 +133,7 @@ TriangleGrid::TriangleGrid(const glm::dvec3 &sceneMin, const glm::dvec3 &sceneMa
         triangleInstances += instances;
     }
 
-    // Sort triangles by area in descending order
+    // Sort triangles by area in ascending order
     for (auto &cell : grid)
     {
         if (cell)
@@ -144,7 +141,7 @@ TriangleGrid::TriangleGrid(const glm::dvec3 &sceneMin, const glm::dvec3 &sceneMa
             std::sort(cell->begin(), cell->end(),
                       [](const PreparedTriangle &a, const PreparedTriangle &b)
                       {
-                          return a.getArea() > b.getArea();
+                          return a.getArea() < b.getArea();
                       });
         }
     }
@@ -204,7 +201,7 @@ int TriangleGrid::getTriangleCount() const
 }
 
 std::vector<double> TriangleGrid::dispatch(const glm::dvec3 &lowerBound, double pixelsToScene,
-                                           double sceneToPixels, int sx, int sy, int sz)
+                                           double sceneToPixels, int sx, int sy, int sz, const int quality)
 {
     int maxCount = sx * sy * sz;
     std::vector<double> result;
@@ -221,7 +218,7 @@ std::vector<double> TriangleGrid::dispatch(const glm::dvec3 &lowerBound, double 
                 int index = (iz * sy * sx + iy * sx + ix) * 4;
 
                 glm::dvec3 point = lowerBound + glm::dvec3(ix, iy, iz) * pixelsToScene;
-                auto [distance, weights, triangleId] = findTriangles(point);
+                auto [distance, weights, triangleId] = findTriangles(point, quality);
                 double pixelDistance = distance * sceneToPixels;
 
                 // Store results in a thread-safe manner
@@ -352,7 +349,7 @@ bool TriangleGrid::processRay(const glm::dvec3 &fromPoint, const glm::dvec3 &dir
     return false;
 }
 
-TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::dvec3 &point)
+TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::dvec3 &point, const int quality)
 {
     FindTrianglesResult result;
     result.distance = std::numeric_limits<double>::infinity();
@@ -395,8 +392,7 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::dvec3 &
         const auto &offset = cellOffsets[i];
         glm::ivec3 p = ipoint + offset;
 
-        if (!(glm::all(glm::greaterThanEqual(p, glm::ivec3(0))) &&
-              glm::all(glm::lessThan(p, gridSize))))
+        if (p.x < 0 || p.y < 0 || p.z < 0 || p.x >= gridSize.x || p.y >= gridSize.y || p.z >= gridSize.z)
             continue;
 
         size_t index = idot(p, gridIndex);
@@ -429,8 +425,16 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::dvec3 &
                 glm::dvec3 dir = point - closestPoint;
                 double dist = glm::dot(dir, dir);
 
-                if (dist < minDistanceSqrd)
+                double diff = dist - minDistanceSqrd;
+
+                if (diff <= 0)
                 {
+                    if (std::abs(diff) < std::numeric_limits<double>::epsilon())
+                    {
+                        if (resultCode == 0 && code != 0)
+                            continue;
+                    }
+
                     minDistanceSqrd = dist;
                     result.distance = std::sqrt(dist);
 
@@ -451,9 +455,8 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::dvec3 &
 
         if (!std::isinf(result.distance))
         {
-            localDist = result.distance / gridStep + 
-                                                    //std::sqrt(2.0) / 2.0;
-                                                    std::sqrt(3.0) / 2.0;
+            localDist = result.distance / gridStep +
+                        std::sqrt(3.0) / 2.0;
         }
 
         if (earlyExit)
@@ -463,30 +466,37 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::dvec3 &
     // Determine sign using ray casting
     int sign = 0;
 
-    // if (resultCode == 0) // only when point is over the triangle
-    // {
-    //     double projection = glm::dot(resultNormal, point - resultPoint);
-    //     sign = projection >= 0 ? 1 : -1;
-    // } else
+    if (resultCode != -1 && (quality == 0 || (quality == 1 && resultCode == 0)))
     {
-        // glm::dvec3 toCenter = glm::normalize(point - ((sceneMax + sceneMin) * 0.5));
-
+        double projection = glm::dot(resultNormal, point - resultPoint);
+        sign = projection >= 0 ? 1 : -1;
+    }
+    else
+    {
         for (const auto &dir : directions)
         {
             int count = countIntersections(point, dir);
             sign += (count % 2 == 0) ? 1 : -1;
 
-            if (/*earlyExit || */std::abs(sign) >= static_cast<int>(directions.size()) / 2 + 1)
-            {
-                // if (earlyExit) {
-                // std::cout << "Early exit for point [" << glm::to_string(point) << "], intersection count " << count << ", sign " << sign << std::endl;
-                // }
+            if (/*earlyExit || */ std::abs(sign) >= static_cast<int>(directions.size()) / 2 + 1)
                 break;
-            }
 
-            if (count != 0)
+            if (count != 0 && quality == 2)
                 break;
         }
+
+        // if (resultCode == 3)
+        // {
+        //     double projection = glm::dot(resultNormal, point - resultPoint);
+        //     if ((projection < 0 && sign >= 0) || (projection >= 0 && sign < 0))
+        //     {
+        //         std::cout << "Faulty point type " << resultCode << ": [" << glm::to_string(point) << "], triangle " << resultTriangle->getId()
+        //                   << ", result point [" << glm::to_string(resultPoint) << "], sign " << sign
+        //                   << ", triangle normal [" << glm::to_string(resultTriangle->getNormal()) << "]"
+        //                   << ", pseudo normal [" << glm::to_string(resultNormal) << "]"
+        //                   << std::endl;
+        //     }
+        // }
     }
 
     result.distance *= (sign >= 0) ? 1.0 : -1.0;

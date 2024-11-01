@@ -21,9 +21,9 @@ public:
                 int gridX, int gridY, int gridZ,
                 const std::vector<PreparedTriangle>& triangles);
 
-    FindTrianglesResult findTriangles(const glm::dvec3& point);
+    FindTrianglesResult findTriangles(const glm::dvec3& point, const int quality);
     std::vector<double> dispatch(const glm::dvec3& lowerBound, double pixelsToScene, 
-                              double sceneToPixels, int sx, int sy, int sz);
+                              double sceneToPixels, int sx, int sy, int sz, const int quality);
     int getTriangleCount() const;
 private:
     using GridCell = std::unique_ptr<std::vector<PreparedTriangle>>;
