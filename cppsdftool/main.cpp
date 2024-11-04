@@ -107,7 +107,7 @@ prepareScene(const std::string &filename, double scale, const std::vector<int> *
 
     Assimp::Importer importer;
     const aiScene *scene = importer.ReadFile(filename,
-                                             aiProcess_Triangulate );//| aiProcess_JoinIdenticalVertices);
+                                             aiProcess_Triangulate | aiProcess_JoinIdenticalVertices);
 
     if (!scene)
     {
@@ -128,6 +128,15 @@ prepareScene(const std::string &filename, double scale, const std::vector<int> *
         std::vector<glm::dvec3> vertices;
         vertices.reserve(mesh->mNumVertices);
 
+        std::unordered_map<glm::dvec3, glm::dvec3, DVec3Hash, DVec3Equal> vertexNormals;
+        vertexNormals.reserve(mesh->mNumVertices);
+
+        if (mesh->HasNormals())
+        {
+            std::cout << timestamp()
+                      << "Processing vertex normals" << std::endl;
+        }
+
         // Convert vertices
         for (unsigned int i = 0; i < mesh->mNumVertices; ++i)
         {
@@ -144,10 +153,6 @@ prepareScene(const std::string &filename, double scale, const std::vector<int> *
 
         std::unordered_map<std::pair<glm::dvec3, glm::dvec3>, glm::dvec3, PairDVec3Hash, PairDVec3Equal> edgeNormals;
         edgeNormals.reserve(mesh->mNumFaces * 3);
-
-        std::unordered_map<glm::dvec3, glm::dvec3, DVec3Hash, DVec3Equal> vertexNormals;
-
-        vertexNormals.reserve(mesh->mNumVertices);
 
         // // helper method
         // auto addEdgeNormal = [&](const int i, const int j, const glm::dvec3 &normal)
@@ -228,14 +233,17 @@ prepareScene(const std::string &filename, double scale, const std::vector<int> *
                     vertices,
                     a, b, c);
 
-                // Vertex
-                const double alpha_0 = corner(triangle.getVertexB(), triangle.getVertexA(), triangle.getVertexC());
-                const double alpha_1 = corner(triangle.getVertexA(), triangle.getVertexB(), triangle.getVertexC());
-                const double alpha_2 = corner(triangle.getVertexB(), triangle.getVertexC(), triangle.getVertexA());
+                if (!mesh->HasNormals())
+                {
+                    // Vertex
+                    const double alpha_0 = corner(triangle.getVertexB(), triangle.getVertexA(), triangle.getVertexC());
+                    const double alpha_1 = corner(triangle.getVertexA(), triangle.getVertexB(), triangle.getVertexC());
+                    const double alpha_2 = corner(triangle.getVertexB(), triangle.getVertexC(), triangle.getVertexA());
 
-                addNormal(vertexNormals, triangle.getVertexA(), alpha_0 * triangle.getNormal());
-                addNormal(vertexNormals, triangle.getVertexB(), alpha_1 * triangle.getNormal());
-                addNormal(vertexNormals, triangle.getVertexC(), alpha_2 * triangle.getNormal());
+                    addNormal(vertexNormals, triangle.getVertexA(), alpha_0 * triangle.getNormal());
+                    addNormal(vertexNormals, triangle.getVertexB(), alpha_1 * triangle.getNormal());
+                    addNormal(vertexNormals, triangle.getVertexC(), alpha_2 * triangle.getNormal());
+                }
 
                 // Edge
                 addEdgeNormal(edgeNormals, triangle.getVertexA(), triangle.getVertexB(), triangle.getNormal());
@@ -252,13 +260,29 @@ prepareScene(const std::string &filename, double scale, const std::vector<int> *
 
         for (auto &triangle : triangles)
         {
-            const auto & a = triangle.getVertexA();
-            const auto & b = triangle.getVertexB();
-            const auto & c = triangle.getVertexC();
+            const auto &a = triangle.getVertexA();
+            const auto &b = triangle.getVertexB();
+            const auto &c = triangle.getVertexC();
 
-            triangle.setPseudoNormals(
-                vertexNormals[a], vertexNormals[b], vertexNormals[c],
-                getEdgeNormal(edgeNormals, a, b), getEdgeNormal(edgeNormals, b, c), getEdgeNormal(edgeNormals, a, c));
+            if (mesh->HasNormals())
+            {
+                int ia = triangle.getIndexA();
+                int ib = triangle.getIndexB();
+                int ic = triangle.getIndexC();
+
+                glm::dvec3 va(mesh->mNormals[ia].x, mesh->mNormals[ia].y, mesh->mNormals[ia].z);
+                glm::dvec3 vb(mesh->mNormals[ib].x, mesh->mNormals[ib].y, mesh->mNormals[ib].z);
+                glm::dvec3 vc(mesh->mNormals[ic].x, mesh->mNormals[ic].y, mesh->mNormals[ic].z);
+                triangle.setPseudoNormals(
+                    va, vb, vc,
+                    getEdgeNormal(edgeNormals, a, b), getEdgeNormal(edgeNormals, b, c), getEdgeNormal(edgeNormals, a, c));
+            }
+            else
+            {
+                triangle.setPseudoNormals(
+                    vertexNormals[a], vertexNormals[b], vertexNormals[c],
+                    getEdgeNormal(edgeNormals, a, b), getEdgeNormal(edgeNormals, b, c), getEdgeNormal(edgeNormals, a, c));
+            }
         }
 
         // int openEdges = 0;
