@@ -1,9 +1,6 @@
 #include "TriangleGrid.hpp"
 #include <iostream>
 
-#define GLM_ENABLE_EXPERIMENTAL
-#include "glm/gtx/string_cast.hpp"
-
 namespace
 {
     // Pre-computed immediate neighbor offsets (26 adjacent cells)
@@ -198,6 +195,11 @@ void TriangleGrid::generateRandomDirections()
 int TriangleGrid::getTriangleCount() const
 {
     return triangleCount;
+}
+
+const glm::ivec3 & TriangleGrid::getGridSize() const
+{
+    return gridSize;
 }
 
 std::vector<double> TriangleGrid::dispatch(const glm::dvec3 &lowerBound, double pixelsToScene,

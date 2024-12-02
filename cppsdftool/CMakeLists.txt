@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 
-# On macOS, set compiler before project definition
+# On macOS, set compiler and OpenMP configuration before project definition
 if(APPLE)
     execute_process(
         COMMAND brew --prefix llvm
@@ -11,21 +11,19 @@ if(APPLE)
     if(NOT LLVM_PREFIX)
         message(FATAL_ERROR "LLVM not found. Please install it using: brew install llvm libomp")
     endif()
-
-    set(CMAKE_C_COMPILER "${LLVM_PREFIX}/bin/clang")
-    set(CMAKE_CXX_COMPILER "${LLVM_PREFIX}/bin/clang++")
     
-    # Set OpenMP flags
+    # Configure OpenMP
     set(OpenMP_CXX_FLAGS "-Xpreprocessor -fopenmp")
     set(OpenMP_C_FLAGS "-Xpreprocessor -fopenmp")
     set(OpenMP_CXX_LIB_NAMES "omp")
     set(OpenMP_C_LIB_NAMES "omp")
     set(OpenMP_omp_LIBRARY "${LLVM_PREFIX}/lib/libomp.dylib")
     
-    include_directories("${LLVM_PREFIX}/include")
+    # Add LLVM include path for OpenMP headers
+    include_directories(SYSTEM "${LLVM_PREFIX}/include")
     link_directories("${LLVM_PREFIX}/lib")
     
-    # Set arm64 architecture for macOS
+    # Set arm64 architecture for Apple Silicon
     set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "Build architectures for macOS" FORCE)
 endif()
 
@@ -39,6 +37,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(glm REQUIRED)
 find_package(assimp REQUIRED)
 find_package(OpenMP REQUIRED)
+
+include(GNUInstallDirs)
 
 # Add executable
 add_executable(process_model
@@ -63,7 +63,6 @@ else()
     target_compile_options(process_model PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-# Set build type specific flags
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_compile_definitions(process_model PRIVATE DEBUG=1)
     if(MSVC)

@@ -1,6 +1,10 @@
 #pragma once
 
 #include <glm/glm.hpp>
+
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/string_cast.hpp>
+
 #include <vector>
 #include <memory>
 #include <cmath>
@@ -25,6 +29,7 @@ public:
     std::vector<double> dispatch(const glm::dvec3& lowerBound, double pixelsToScene, 
                               double sceneToPixels, int sx, int sy, int sz, const int quality);
     int getTriangleCount() const;
+    const glm::ivec3 & getGridSize() const;
 private:
     using GridCell = std::unique_ptr<std::vector<PreparedTriangle>>;
 

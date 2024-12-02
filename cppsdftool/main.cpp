@@ -370,7 +370,7 @@ ProcessingMetadata processModel(const std::string &filename, const std::string &
 
     std::cout << timestamp()
               << "Triangle grid ready: "
-              << triangleGrid.getTriangleCount()
+              << glm::to_string(triangleGrid.getGridSize())
               << std::endl;
 
     // Generate distance field
