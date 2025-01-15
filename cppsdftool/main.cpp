@@ -313,7 +313,7 @@ prepareScene(const std::string &filename, double scale, const std::vector<int> *
 
 ProcessingMetadata processModel(const std::string &filename, const std::string &outputFile,
                                 int pixels = 256, int quality = 0, int topLodCellSize = 8, double scale = 1.0,
-                                const std::vector<int> *selectedIndices = nullptr)
+                                const std::vector<int> *selectedIndices = nullptr, bool saveToPoints = false)
 {
     std::cout << timestamp()
               << "Processing file "
@@ -388,7 +388,10 @@ ProcessingMetadata processModel(const std::string &filename, const std::string &
     // Save to file
     std::vector<float> floatData(distanceData.begin(), distanceData.end());
 
-    saveKTX(KTX_R32F, (uint)sx, (uint)sy, (uint)sz, floatData, outputFile, 4);
+    if (saveToPoints)
+        savePoints((uint)sx, (uint)sy, (uint)sz, topLodCellSize, sceneMin.x, sceneMin.y, sceneMin.z, sceneMax.x, sceneMax.y, sceneMax.z, floatData, outputFile, 4);
+    else
+        saveKTX(KTX_R32F, (uint)sx, (uint)sy, (uint)sz, floatData, outputFile, 4);
 
     std::cout << timestamp()
               << "Distance field saved to "
@@ -409,6 +412,7 @@ void printUsage()
     std::cout << "Usage: process_model [options] input_file output_file\n"
               << "Options:\n"
               << "  --list                List available meshes and exit\n"
+              << "  --points              Save points file instead of KTX 3D texture\n"
               << "  --scale value         Scale factor to apply to the model\n"
               << "  --pixels value        Maximum pixel size for LOD 0\n"
               << "  --top-lod-cell-size value  Cell size for highest LOD\n"
@@ -435,12 +439,17 @@ int main(int argc, char *argv[])
         int topLodCellSize = 8;
         std::vector<int> selectedIndices;
         bool listOnly = false;
+        bool points = false;
 
         for (size_t i = 0; i < args.size(); ++i)
         {
             if (args[i] == "--list")
             {
                 listOnly = true;
+            }
+            if (args[i] == "--points")
+            {
+                points = true;
             }
             else if (args[i] == "--scale" && i + 1 < args.size())
             {
@@ -509,7 +518,8 @@ int main(int argc, char *argv[])
             quality,
             topLodCellSize,
             scale,
-            selectedIndices.empty() ? nullptr : &selectedIndices);
+            selectedIndices.empty() ? nullptr : &selectedIndices,
+            points);
 
         // Print summary
         std::cout << "\nProcessing Summary:" << std::endl;

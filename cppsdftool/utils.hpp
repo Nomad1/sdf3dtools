@@ -41,4 +41,9 @@ public:
 // Utility functions
 std::string timestamp();
 void saveKTX(uint format, uint width, uint height, uint depth, 
-             std::vector<float>& data, const std::string& outputFile, uint stride = 0);
+             std::vector<float>& data, const std::string& outputFile, uint stride = 1);
+
+void savePoints(uint width, uint height, uint depth, uint cellSize, 
+                float lbx, float lby, float lbz,
+                float ubx, float uby, float ubz,
+                std::vector<float>& data, const std::string& outputFile, uint stride = 1);

@@ -73,9 +73,47 @@ void saveKTX(uint format, uint width, uint height, uint depth,
     if (stride == 0)
         stride = 1;
 
-    writer.write((uint)(data.size() * 4/ stride)); // current mipmap size
+    writer.write((uint)(data.size() * 4 / stride)); // current mipmap size
 
     for (size_t i = 0; i < data.size(); i += stride) {
         writer.write(data[i]);
+    }
+}
+
+void savePoints(uint width, uint height, uint depth, uint cellSize, 
+                float lbx, float lby, float lbz,
+                float ubx, float uby, float ubz,
+                std::vector<float>& data, const std::string& outputFile, uint stride) {
+
+    binary_ofstream writer(outputFile, std::ios::binary);
+    if (!writer) {
+        throw std::runtime_error("Failed to open output file: " + outputFile);
+    }
+
+    writer.write(width);
+    writer.write(height);
+    writer.write(depth);
+    writer.write(cellSize);
+    writer.write(lbx);
+    writer.write(lby);
+    writer.write(lbz);
+    writer.write(ubx);
+    writer.write(uby);
+    writer.write(ubz);
+
+    writer.write((uint)(data.size() / stride));
+
+    for (size_t i = 0; i < data.size(); i += stride) {
+        writer.write(data[i + 0]);
+        writer.write(data[i + 1]);
+        writer.write(data[i + 2]);
+        writer.write(0);
+        writer.write(0);
+        writer.write(0);
+        writer.write(0);
+        writer.write(0.0f);
+        writer.write(0.0f);
+        writer.write(0.0f);
+        writer.write(0.0f);
     }
 }
