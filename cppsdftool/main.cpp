@@ -389,7 +389,7 @@ ProcessingMetadata processModel(const std::string &filename, const std::string &
     std::vector<float> floatData(distanceData.begin(), distanceData.end());
 
     if (saveToPoints)
-        savePoints((uint)sx, (uint)sy, (uint)sz, topLodCellSize, sceneMin.x, sceneMin.y, sceneMin.z, sceneMax.x, sceneMax.y, sceneMax.z, floatData, outputFile, 4);
+        savePoints((uint)sx, (uint)sy, (uint)sz, paddedTopLodCellSize, sceneMin.x, sceneMin.y, sceneMin.z, sceneMax.x, sceneMax.y, sceneMax.z, floatData, outputFile, 4);
     else
         saveKTX(KTX_R32F, (uint)sx, (uint)sy, (uint)sz, floatData, outputFile, 4);
 

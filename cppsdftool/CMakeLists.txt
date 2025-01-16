@@ -49,7 +49,7 @@ add_executable(process_model
 )
 
 # Link libraries
-target_link_libraries(process_model
+target_link_libraries(${PROJECT_NAME}
     PRIVATE
     glm::glm
     assimp::assimp
@@ -58,23 +58,23 @@ target_link_libraries(process_model
 
 # Enable warnings and compiler options
 if(MSVC)
-    target_compile_options(process_model PRIVATE /W4)
+    target_compile_options(${PROJECT_NAME} PRIVATE /W4)
 else()
-    target_compile_options(process_model PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    target_compile_definitions(process_model PRIVATE DEBUG=1)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE DEBUG=1)
     if(MSVC)
-        target_compile_options(process_model PRIVATE /Od /Zi)
+        target_compile_options(${PROJECT_NAME} PRIVATE /Od /Zi)
     else()
-        target_compile_options(process_model PRIVATE -O0 -g)
+        target_compile_options(${PROJECT_NAME} PRIVATE -O0 -g)
     endif()
 else()
-    target_compile_definitions(process_model PRIVATE NDEBUG=1)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE NDEBUG=1)
     if(MSVC)
-        target_compile_options(process_model PRIVATE /O2)
+        target_compile_options(${PROJECT_NAME} PRIVATE /O2)
     else()
-        target_compile_options(process_model PRIVATE -O3)
+        target_compile_options(${PROJECT_NAME} PRIVATE -O3)
     endif()
 endif()
