@@ -11,7 +11,11 @@
 #include <algorithm>
 #include <set>
 #include <limits>
+
 #include "PreparedTriangle.hpp"
+
+class FastWindingNumber;
+
 
 class TriangleGrid {
 public:
@@ -24,6 +28,8 @@ public:
     TriangleGrid(const glm::dvec3& sceneMin, const glm::dvec3& sceneMax,
                 int gridX, int gridY, int gridZ,
                 const std::vector<PreparedTriangle>& triangles);
+
+    ~TriangleGrid();
 
     FindTrianglesResult findTriangles(const glm::dvec3& point, const int quality);
     std::vector<double> dispatch(const glm::dvec3& lowerBound, double pixelsToScene, 
@@ -47,6 +53,8 @@ private:
     int triangleCount;
     int triangleInstances;
     int cellsUsed;
+
+    FastWindingNumber * fastWindingNumber;
 
     std::vector<GridCell> grid;
     std::vector<float> emptyCells;

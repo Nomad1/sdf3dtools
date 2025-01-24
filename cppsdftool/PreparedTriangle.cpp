@@ -6,6 +6,13 @@ PreparedTriangle::PreparedTriangle(int id, const std::vector<glm::dvec3> &vertic
                                    size_t ia, size_t ib, size_t ic)
     : id(id), ia(ia), ib(ib), ic(ic), a(vertices[ia]), b(vertices[ib]), c(vertices[ic])
 {
+
+    //glm::dvec3 edge1 = b - a;
+    //glm::dvec3 edge2 = c - a;
+    //n = glm::normalize(glm::cross(edge1, edge2));
+    //area = 0.5 * glm::length(glm::cross(edge1, edge2));
+
+
     // Calculate normal vector
     glm::dvec3 ba = b - a;
     glm::dvec3 ca = c - a;
@@ -31,12 +38,11 @@ PreparedTriangle::PreparedTriangle(int id, const std::vector<glm::dvec3> &vertic
         n = glm::cross(-ca, bc);
     }
 
-    area = glm::dot(n, n);
-
     // Calculate area and normalize normal vector
-    double normalLength = std::max(std::sqrt(area), std::numeric_limits<double>::epsilon());
-    n /= normalLength;
-    area = area / 2.0;
+    area = std::max(glm::length(n), std::numeric_limits<double>::epsilon());
+
+    n /= area;
+    area /= 2.0;
 
     // Calculate center and radius
     center = (a + b + c) / 3.0;

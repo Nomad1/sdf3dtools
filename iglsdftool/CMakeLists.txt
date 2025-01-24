@@ -17,26 +17,35 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(libigl)
 
-# Add your executable
+# Add your main executable
 add_executable(${PROJECT_NAME} main.cpp utils.cpp)
+
+# Add test executable
+add_executable(winding_test test_libigl_winding.cpp)
 
 # Link against libigl
 target_link_libraries(${PROJECT_NAME} PRIVATE igl::core)
+target_link_libraries(winding_test PRIVATE igl::core)
 
 # Enable warnings and compiler options
-
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_compile_definitions(${PROJECT_NAME} PRIVATE DEBUG=1)
+    target_compile_definitions(winding_test PRIVATE DEBUG=1)
     if(MSVC)
         target_compile_options(${PROJECT_NAME} PRIVATE /Od /Zi)
+        target_compile_options(winding_test PRIVATE /Od /Zi)
     else()
         target_compile_options(${PROJECT_NAME} PRIVATE -O0 -g)
+        target_compile_options(winding_test PRIVATE -O0 -g)
     endif()
 else()
     target_compile_definitions(${PROJECT_NAME} PRIVATE NDEBUG=1)
+    target_compile_definitions(winding_test PRIVATE NDEBUG=1)
     if(MSVC)
         target_compile_options(${PROJECT_NAME} PRIVATE /O2)
+        target_compile_options(winding_test PRIVATE /O2)
     else()
         target_compile_options(${PROJECT_NAME} PRIVATE -O3)
+        target_compile_options(winding_test PRIVATE -O3)
     endif()
 endif()

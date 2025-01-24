@@ -1,4 +1,5 @@
 #include "TriangleGrid.hpp"
+#include "FastWindingNumber.hpp"
 #include <iostream>
 
 namespace
@@ -61,7 +62,8 @@ namespace
 TriangleGrid::TriangleGrid(const glm::dvec3 &sceneMin, const glm::dvec3 &sceneMax,
                            int gridX, int gridY, int gridZ,
                            const std::vector<PreparedTriangle> &triangles)
-    : sceneMin(sceneMin), sceneMax(sceneMax), gridSize(gridX, gridY, gridZ), gridIndex(1, gridX, gridX * gridY)
+    : sceneMin(sceneMin), sceneMax(sceneMax), gridSize(gridX, gridY, gridZ), gridIndex(1, gridX, gridX * gridY),
+    fastWindingNumber(new FastWindingNumber(triangles))
 {
 
     gridStep = std::max(
@@ -142,6 +144,11 @@ TriangleGrid::TriangleGrid(const glm::dvec3 &sceneMin, const glm::dvec3 &sceneMa
                       });
         }
     }
+}
+
+TriangleGrid::~TriangleGrid()
+{
+    delete fastWindingNumber;
 }
 
 void TriangleGrid::generateOrderedOffsets()
@@ -468,6 +475,10 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::dvec3 &
     // Determine sign using ray casting
     int sign = 0;
 
+    if (quality == 4)
+    {
+        sign = fastWindingNumber->is_inside(point) ? -1 : 1;
+    } else
     if (resultCode != -1 && (quality == 0 || (quality == 1 && resultCode == 0)))
     {
         double projection = glm::dot(resultNormal, point - resultPoint);

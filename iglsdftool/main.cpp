@@ -208,7 +208,7 @@ int main(int argc, char *argv[]) {
         GV,        // Query points
         V,         // Mesh vertices
         F,         // Mesh faces
-        igl::SIGNED_DISTANCE_TYPE_FAST_WINDING_NUMBER, // Distance type
+        igl::SIGNED_DISTANCE_TYPE_FAST_WINDING_NUMBER, //SIGNED_DISTANCE_TYPE_FAST_WINDING_NUMBER, // Distance type
         S,         // Signed distances
         I,         // Face indices
         C,         // Closest points

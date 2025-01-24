@@ -27,6 +27,7 @@ public:
     const glm::dvec3& getVertexA() const { return a; }
     const glm::dvec3& getVertexB() const { return b; }
     const glm::dvec3& getVertexC() const { return c; }    
+    const glm::dvec3& getCenter() const { return center; }
     size_t getIndexA() const { return ia; }
     size_t getIndexB() const { return ib; }
     size_t getIndexC() const { return ic; }    

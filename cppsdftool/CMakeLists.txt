@@ -29,6 +29,8 @@ endif()
 
 project(process_model VERSION 1.0)
 
+list(PREPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/recipes)
+
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -41,12 +43,20 @@ find_package(OpenMP REQUIRED)
 include(GNUInstallDirs)
 
 # Add executable
-add_executable(process_model
+add_executable(${PROJECT_NAME}
     main.cpp
     utils.cpp
     PreparedTriangle.cpp
     TriangleGrid.cpp
 )
+
+# Set library properties and include directories
+target_include_directories(${PROJECT_NAME} 
+    PUBLIC 
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+include(simde)
 
 # Link libraries
 target_link_libraries(${PROJECT_NAME}
@@ -54,6 +64,7 @@ target_link_libraries(${PROJECT_NAME}
     glm::glm
     assimp::assimp
     OpenMP::OpenMP_CXX
+    simde::simde
 )
 
 # Enable warnings and compiler options
