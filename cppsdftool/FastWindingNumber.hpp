@@ -13,6 +13,7 @@
 #include <vector>
 #include "PreparedTriangle.hpp"
 #include "FastWindingNumber.h"
+#include <glm/gtc/constants.hpp>
 
 
 namespace HDK_Sample{ template <typename T1, typename T2> class UT_SolidAngle;}
@@ -40,24 +41,49 @@ public:
         Qp[0] = p[0];
         Qp[1] = p[1];
         Qp[2] = p[2];
-        double w = fwn_bvh.ut_solid_angle.computeSolidAngle(Qp, beta) / (4.0 * glm::pi<double>());
 
-        bool isInside = w > 0.5;
+        return fwn_bvh.ut_solid_angle.computeSolidAngle(Qp, beta) / (4.0 * glm::pi<double>());
     }
 
+    ~FastWindingNumber() = default;
+
 private:
-    std::vector<PreparedTriangle> triangles;
     FastWindingNumberBVH fwn_bvh;
 
     void initialize(const std::vector<PreparedTriangle>& input_triangles) {
-        triangles = input_triangles;
-        FastWindingNumberBVH fwn_bvh;
         int order = 2;
-
+        
         
         // Extra copies. Usuually this won't be the bottleneck.
-        fwn_bvh.U.resize(input_triangles.size()*3);
-        fwn_bvh.F.resize(input_triangles.size()*3);
+        fwn_bvh.U.resize(input_triangles.size() * 3);
+        fwn_bvh.F.resize(input_triangles.size() * 3);
+
+        
+        // Copy vertices and triangle indices
+        for (size_t i = 0; i < input_triangles.size(); i++) {
+            const auto& tri = input_triangles[i];
+            int baseIdx = i * 3;
+
+            // Copy vertices
+            fwn_bvh.U[baseIdx][0] = tri.getVertexA().x;
+            fwn_bvh.U[baseIdx][1] = tri.getVertexA().y;
+            fwn_bvh.U[baseIdx][2] = tri.getVertexA().z;
+            
+            fwn_bvh.U[baseIdx + 1][0] = tri.getVertexB().x;
+            fwn_bvh.U[baseIdx + 1][1] = tri.getVertexB().y;
+            fwn_bvh.U[baseIdx + 1][2] = tri.getVertexB().z;
+            
+            fwn_bvh.U[baseIdx + 2][0] = tri.getVertexC().x;
+            fwn_bvh.U[baseIdx + 2][1] = tri.getVertexC().y;
+            fwn_bvh.U[baseIdx + 2][2] = tri.getVertexC().z;
+
+            // Set indices
+            fwn_bvh.F[baseIdx] = baseIdx;
+            fwn_bvh.F[baseIdx + 1] = baseIdx + 1;
+            fwn_bvh.F[baseIdx + 2] = baseIdx + 2;
+        }
+
+       /*
 
         for (int i = 0; i < input_triangles.size(); i += 3)
         {
@@ -73,8 +99,8 @@ private:
             for (int j = 0; j < 3; j++)
                 fwn_bvh.U[i * 3 + 2][j] = input_triangles[i].getVertexC()[j];
 
-            fwn_bvh.F[i * 3 + 1] = i * 3 + 1;
-        }
+            fwn_bvh.F[i * 3 + 2] = i * 3 + 2;
+        }*/
 
         fwn_bvh.ut_solid_angle.clear();
         fwn_bvh.ut_solid_angle.init(

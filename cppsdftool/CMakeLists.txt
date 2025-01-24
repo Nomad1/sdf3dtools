@@ -50,10 +50,31 @@ add_executable(${PROJECT_NAME}
     TriangleGrid.cpp
 )
 
+
 # Set library properties and include directories
 target_include_directories(${PROJECT_NAME} 
     PUBLIC 
     ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+# Add test executable
+add_executable(winding_number_tests
+    tests/winding_number_tests.cpp
+    utils.cpp
+    PreparedTriangle.cpp
+)
+
+target_include_directories(winding_number_tests 
+    PUBLIC 
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_link_libraries(winding_number_tests
+    PRIVATE
+    glm::glm
+    assimp::assimp
+    OpenMP::OpenMP_CXX
+    simde::simde
 )
 
 include(simde)
