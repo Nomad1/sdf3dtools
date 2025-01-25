@@ -2,29 +2,35 @@
 #include <iomanip>
 #include <sstream>
 
-namespace {
+namespace
+{
     std::chrono::steady_clock::time_point startTime = std::chrono::steady_clock::now();
 }
 
-binary_ofstream& binary_ofstream::write(const char* data, std::streamsize count) {
+binary_ofstream &binary_ofstream::write(const char *data, std::streamsize count)
+{
     std::ofstream::write(data, count);
     return *this;
 }
 
-void binary_ofstream::pad_to(std::streampos position) {
-    while (tellp() < position) {
+void binary_ofstream::pad_to(std::streampos position)
+{
+    while (tellp() < position)
+    {
         write((int)0);
     }
 }
 
-template<typename T>
-typename std::enable_if_t<std::is_arithmetic_v<T>, binary_ofstream&>
-binary_ofstream::write(const T& value) {
-    std::ofstream::write(reinterpret_cast<const char*>(&value), sizeof(T));
+template <typename T>
+typename std::enable_if_t<std::is_arithmetic_v<T>, binary_ofstream &>
+binary_ofstream::write(const T &value)
+{
+    std::ofstream::write(reinterpret_cast<const char *>(&value), sizeof(T));
     return *this;
 }
 
-std::string timestamp() {
+std::string timestamp()
+{
     auto currentTime = std::chrono::high_resolution_clock::now();
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - startTime);
 
@@ -37,7 +43,7 @@ std::string timestamp() {
 
     std::stringstream ss;
     ss << "["
-       << std::setfill('0') 
+       << std::setfill('0')
        << std::setw(2) << hours.count() << ":"
        << std::setw(2) << minutes.count() << ":"
        << std::setw(2) << seconds.count() << "."
@@ -45,21 +51,23 @@ std::string timestamp() {
     return ss.str();
 }
 
-void saveKTX(uint format, uint width, uint height, uint depth, 
-             std::vector<float>& data, const std::string& outputFile, uint stride) {
+void saveKTX(uint format, uint width, uint height, uint depth,
+             std::vector<float> &data, const std::string &outputFile, uint stride)
+{
 
     binary_ofstream writer(outputFile, std::ios::binary);
-    if (!writer) {
+    if (!writer)
+    {
         throw std::runtime_error("Failed to open output file: " + outputFile);
     }
 
-    writer.write(reinterpret_cast<const char*>(KTX_SIGNATURE), sizeof(KTX_SIGNATURE));
+    writer.write(reinterpret_cast<const char *>(KTX_SIGNATURE), sizeof(KTX_SIGNATURE));
     writer.write(0x04030201);
     writer.write(KTX_FLOAT);
-    writer.write(4); // raw size
+    writer.write(4);      // raw size
     writer.write(format); // raw format
     writer.write(format); // format
-    writer.write(format); 
+    writer.write(format);
     writer.write(width);
     writer.write(height);
     writer.write(depth);
@@ -75,21 +83,48 @@ void saveKTX(uint format, uint width, uint height, uint depth,
 
     writer.write((uint)(data.size() * 4 / stride)); // current mipmap size
 
-    for (size_t i = 0; i < data.size(); i += stride) {
+    for (size_t i = 0; i < data.size(); i += stride)
+    {
         writer.write(data[i]);
     }
 }
 
+
+// Explicit template instantiation for double
+template void savePoints<double>(uint width, uint height, uint depth, uint cellSize, 
+                                 float lbx, float lby, float lbz,
+                                 float ubx, float uby, float ubz,
+                                 const std::vector<std::vector<double>>& data, const std::string& outputFile,
+                                 bool hasUv,
+                                 bool hasBones);
+
+
+// Explicit template instantiation for float
+template void savePoints<float>(uint width, uint height, uint depth, uint cellSize, 
+                                 float lbx, float lby, float lbz,
+                                 float ubx, float uby, float ubz,
+                                 const std::vector<std::vector<float>>& data, const std::string& outputFile,
+                                 bool hasUv,
+                                 bool hasBones);
+
+
+template<typename T>
 void savePoints(uint width, uint height, uint depth, uint cellSize, 
                 float lbx, float lby, float lbz,
                 float ubx, float uby, float ubz,
-                std::vector<float>& data, const std::string& outputFile, uint stride) {
+                const std::vector<std::vector<T>>& data, const std::string& outputFile,
+                bool hasUv,
+                bool hasBones)
+{
+    static_assert(std::is_floating_point_v<T>, "Type must be floating point");
 
     binary_ofstream writer(outputFile, std::ios::binary);
-    if (!writer) {
+    if (!writer)
+    {
         throw std::runtime_error("Failed to open output file: " + outputFile);
     }
 
+    writer.write(reinterpret_cast<const char *>(POINTS_SIGNATURE), sizeof(POINTS_SIGNATURE));
     writer.write(width);
     writer.write(height);
     writer.write(depth);
@@ -101,27 +136,45 @@ void savePoints(uint width, uint height, uint depth, uint cellSize,
     writer.write(uby);
     writer.write(ubz);
 
-    writer.write((uint)(data.size() / stride));
+    uint flags = 0;
+    if (hasUv)
+        flags |= POINTS_FLAG_UVS;
+    if (hasBones)
+        flags |= POINTS_FLAG_BONES;
+    if (data.size() > 1)
+        flags |= POINTS_FLAG_LODS;
 
-    for (size_t i = 0; i < data.size(); i += stride) {
-        writer.write(data[i + 0]);
-        if (stride > 1)
-           writer.write(data[i + 1]);
-        else
-           writer.write(0.0f);
+    writer.write(flags);
 
-        if (stride > 2)
-           writer.write(data[i + 2]);
-        else
-           writer.write(0.0f);
+    int stride = 4; // TODO: change if bones are included
 
-        writer.write(0);
-        writer.write(0);
-        writer.write(0);
-        writer.write(0);
-        writer.write(0.0f);
-        writer.write(0.0f);
-        writer.write(0.0f);
-        writer.write(0.0f);
+    for (size_t l = 0; l < data.size(); ++l)
+    {
+        const std::vector<T> &lodData = data[l];
+
+        writer.write((uint)(lodData.size() / stride));
+
+        for (size_t i = 0; i < lodData.size(); i += stride)
+        {
+            writer.write(static_cast<float>(lodData[i + 0]));
+
+            if (hasUv)
+            {
+                writer.write(static_cast<float>(lodData[i + 1]));
+                writer.write(static_cast<float>(lodData[i + 2]));
+            }
+
+            if (hasBones)
+            {
+                writer.write(0);
+                writer.write(0);
+                writer.write(0);
+                writer.write(0);
+                writer.write(0.0f);
+                writer.write(0.0f);
+                writer.write(0.0f);
+                writer.write(0.0f);
+            }
+        }
     }
 }

@@ -1,5 +1,7 @@
 #include "TriangleGrid.hpp"
 #include "FastWindingNumber.hpp"
+#include "utils.hpp"
+
 #include <iostream>
 
 namespace
@@ -63,7 +65,7 @@ TriangleGrid::TriangleGrid(const glm::dvec3 &sceneMin, const glm::dvec3 &sceneMa
                            int gridX, int gridY, int gridZ,
                            const std::vector<PreparedTriangle> &triangles)
     : sceneMin(sceneMin), sceneMax(sceneMax), gridSize(gridX, gridY, gridZ), gridIndex(1, gridX, gridX * gridY),
-    fastWindingNumber(new FastWindingNumber(triangles))
+      fastWindingNumber(new FastWindingNumber(triangles))
 {
 
     gridStep = std::max(
@@ -204,20 +206,76 @@ int TriangleGrid::getTriangleCount() const
     return triangleCount;
 }
 
-const glm::ivec3 & TriangleGrid::getGridSize() const
+const glm::ivec3 &TriangleGrid::getGridSize() const
 {
     return gridSize;
 }
 
-std::vector<double> TriangleGrid::dispatch(const glm::dvec3 &lowerBound, double pixelsToScene,
-                                           double sceneToPixels, int sx, int sy, int sz, const int quality)
+std::vector<std::vector<double>> TriangleGrid::dispatch(const glm::dvec3 &lowerBound, double pixelsToScene, double sceneToPixels,
+                                                        int sx, int sy, int sz, const int quality,
+                                                        const uint lods)
 {
-    int maxCount = sx * sy * sz;
-    std::vector<double> result;
-    result.resize(maxCount * 4);
+    std::vector<std::vector<double>> results;
+    results.resize(lods);
 
-// Use OpenMP to parallelize the loop
-#pragma omp parallel for schedule(dynamic) collapse(3)
+#ifdef CALC_ALL_LODS
+    for (size_t l = 0; l < lods; ++l)
+    {
+        std::cout << timestamp()
+                  << "Processing LOD " << (l + 1)
+                  << ", size: [" << sx << ", " << sy << ", " << sz << "]"
+                  << std::endl;
+
+        std::vector<double> &result = results[l];
+        result.resize(sx * sy * sz * 4);
+
+        #pragma omp parallel for schedule(dynamic) collapse(3)
+        for (int iz = 0; iz < sz; ++iz)
+        {
+            for (int iy = 0; iy < sy; ++iy)
+            {
+                for (int ix = 0; ix < sx; ++ix)
+                {
+                    int index = (iz * sy * sx + iy * sx + ix) * 4;
+
+                    glm::dvec3 point = lowerBound + glm::dvec3(ix, iy, iz) * pixelsToScene;
+                    auto [distance, weights, triangleId] = findTriangles(point, quality);
+                    double pixelDistance = distance * sceneToPixels;
+
+                    // Store results in a thread-safe manner
+                    result[index] = pixelDistance;
+                    result[index + 1] = weights.x;
+                    result[index + 2] = weights.y;
+                    result[index + 3] = static_cast<double>(triangleId);
+                }
+            }
+        }
+
+        sx = sx * 2 - 1;
+        sy = sy * 2 - 1;
+        sz = sz * 2 - 1;
+        pixelsToScene *= 0.5;
+        sceneToPixels *= 2.0;
+    }
+#else
+
+    // Process only the last LOD first
+    sx = sx * (1 << (lods - 1)) - ((1 << (lods - 1)) - 1);
+    sy = sy * (1 << (lods - 1)) - ((1 << (lods - 1)) - 1);
+    sz = sz * (1 << (lods - 1)) - ((1 << (lods - 1)) - 1);
+    pixelsToScene *= 1.0 / (1 << (lods - 1));
+    sceneToPixels *= (1 << (lods - 1));
+
+    // Process highest resolution first (last LOD)
+    std::vector<double> &lastLOD = results[lods - 1];
+    lastLOD.resize(sx * sy * sz * 4);
+
+    std::cout << timestamp()
+              << "Processing LOD " << (lods)
+              << ", size: [" << sx << ", " << sy << ", " << sz << "]"
+              << std::endl;
+
+    #pragma omp parallel for schedule(dynamic) collapse(3)
     for (int iz = 0; iz < sz; ++iz)
     {
         for (int iy = 0; iy < sy; ++iy)
@@ -225,21 +283,59 @@ std::vector<double> TriangleGrid::dispatch(const glm::dvec3 &lowerBound, double 
             for (int ix = 0; ix < sx; ++ix)
             {
                 int index = (iz * sy * sx + iy * sx + ix) * 4;
-
                 glm::dvec3 point = lowerBound + glm::dvec3(ix, iy, iz) * pixelsToScene;
                 auto [distance, weights, triangleId] = findTriangles(point, quality);
                 double pixelDistance = distance * sceneToPixels;
 
-                // Store results in a thread-safe manner
-                result[index] = pixelDistance;
-                result[index + 1] = weights.x;
-                result[index + 2] = weights.y;
-                result[index + 3] = static_cast<double>(triangleId);
+                lastLOD[index] = pixelDistance;
+                lastLOD[index + 1] = weights.x;
+                lastLOD[index + 2] = weights.y;
+                lastLOD[index + 3] = static_cast<double>(triangleId);
             }
         }
     }
 
-    return result;
+    // Calculate lower LODs by downsampling
+    for (int l = lods - 2; l >= 0; --l)
+    {
+
+        int curSX = sx / 2 + 1;
+        int curSY = sy / 2 + 1;
+        int curSZ = sz / 2 + 1;
+
+        std::cout << timestamp()
+                  << "Processing LOD " << (l + 1)
+                  << ", size: [" << curSX << ", " << curSY << ", " << curSZ << "]"
+                  << std::endl;
+
+        results[l].resize(curSX * curSY * curSZ * 4);
+
+        #pragma omp parallel for collapse(3)
+        for (int iz = 0; iz < curSZ; ++iz)
+        {
+            for (int iy = 0; iy < curSY; ++iy)
+            {
+                for (int ix = 0; ix < curSX; ++ix)
+                {
+                    int curIndex = (iz * curSY * curSX + iy * curSX + ix) * 4;
+                    int prevIndex = (iz * 2 * sy * sx + iy * 2 * sx + ix * 2) * 4;
+
+                    results[l][curIndex] = results[l + 1][prevIndex];
+                    results[l][curIndex + 1] = results[l + 1][prevIndex + 1];
+                    results[l][curIndex + 2] = results[l + 1][prevIndex + 2];
+                    results[l][curIndex + 3] = results[l + 1][prevIndex + 3];
+                }
+            }
+        }
+
+        sx = curSX;
+        sy = curSY;
+        sz = curSZ;
+    }
+
+#endif
+
+    return results;
 }
 
 int TriangleGrid::countIntersections(const glm::dvec3 &point, const glm::dvec3 &dir)
@@ -249,18 +345,6 @@ int TriangleGrid::countIntersections(const glm::dvec3 &point, const glm::dvec3 &
 
     // Convert to grid coordinates
     glm::dvec3 localPoint = (point - sceneMin) / gridStep;
-    // glm::dvec3 gridMax(gridSize);
-    //    double lengthMax = glm::length(gridMax);
-
-    // auto [intersects, boundEnter, boundExit] = segmentBoundIntersection(
-    // glm::dvec3(0), gridMax, localPoint, idir, lengthMax);
-
-    // if (!intersects)
-    // return 0;
-
-    // glm::dvec3 localEndPoint = localPoint + dir * boundExit;
-
-    // glm::dvec3 localEndPoint = localPoint + dir * lengthMax;
 
     std::set<int> triangles;
 
@@ -478,8 +562,8 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::dvec3 &
     if (quality == 4)
     {
         sign = fastWindingNumber->is_inside(point) ? -1 : 1;
-    } else
-    if (resultCode != -1 && (quality == 0 || (quality == 1 && resultCode == 0)))
+    }
+    else if (resultCode != -1 && (quality == 0 || (quality == 1 && resultCode == 0)))
     {
         double projection = glm::dot(resultNormal, point - resultPoint);
         sign = projection >= 0 ? 1 : -1;

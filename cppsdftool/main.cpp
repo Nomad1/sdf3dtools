@@ -18,32 +18,6 @@ struct ProcessingMetadata
     size_t triangleCount;
 };
 
-void printModelInfo(const std::string &filename)
-{
-    Assimp::Importer importer;
-    const aiScene *scene = importer.ReadFile(filename,
-                                             aiProcess_Triangulate | aiProcess_JoinIdenticalVertices);
-
-    if (!scene)
-    {
-        std::cerr << "Error loading file: " << importer.GetErrorString() << std::endl;
-        return;
-    }
-
-    std::cout << "\nAvailable meshes in the model:" << std::endl;
-    std::cout << "Index | Name" << std::endl;
-    std::cout << std::string(30, '-') << std::endl;
-
-    for (unsigned int i = 0; i < scene->mNumMeshes; i++)
-    {
-        aiMesh *mesh = scene->mMeshes[i];
-        std::cout << std::setw(5) << i << " | "
-                  << (mesh->mName.length > 0 ? mesh->mName.C_Str() : "unnamed_mesh")
-                  << std::endl;
-    }
-    std::cout << std::endl;
-}
-
 struct DVec3Hash
 {
     size_t operator()(const glm::dvec3 &v) const
@@ -312,7 +286,7 @@ prepareScene(const std::string &filename, double scale, const std::vector<int> *
 }
 
 ProcessingMetadata processModel(const std::string &filename, const std::string &outputFile,
-                                int pixels = 256, int quality = 0, int topLodCellSize = 8, double scale = 1.0,
+                                int pixels = 256, int quality = 0, int lod = 1, int topLodCellSize = 8, double scale = 1.0,
                                 const std::vector<int> *selectedIndices = nullptr, bool saveToPoints = false)
 {
     std::cout << timestamp()
@@ -363,9 +337,9 @@ ProcessingMetadata processModel(const std::string &filename, const std::string &
 
     // Create triangle grid
     TriangleGrid triangleGrid(lowerBound, upperBound,
-                              sx / topLodCellSize + (sx % topLodCellSize != 0),
-                              sy / topLodCellSize + (sy % topLodCellSize != 0),
-                              sz / topLodCellSize + (sz % topLodCellSize != 0),
+                              (sx / topLodCellSize + (sx % topLodCellSize != 0)) << (lod - 1),
+                              (sy / topLodCellSize + (sy % topLodCellSize != 0)) << (lod - 1),
+                              (sz / topLodCellSize + (sz % topLodCellSize != 0)) << (lod - 1),
                               triangles);
 
     std::cout << timestamp()
@@ -374,11 +348,11 @@ ProcessingMetadata processModel(const std::string &filename, const std::string &
               << std::endl;
 
     // Generate distance field
-    std::vector<double> distanceData = triangleGrid.dispatch(
+    std::vector<std::vector<double>> distanceData = triangleGrid.dispatch(
         lowerBound,
         pixelsToScene,
         sceneToPixels / paddedTopLodCellSize,
-        sx, sy, sz, quality);
+        sx, sy, sz, quality, lod);
 
     std::cout << timestamp()
               << "Distance field processed. Length: "
@@ -386,12 +360,16 @@ ProcessingMetadata processModel(const std::string &filename, const std::string &
               << std::endl;
 
     // Save to file
-    std::vector<float> floatData(distanceData.begin(), distanceData.end());
 
     if (saveToPoints)
-        savePoints((uint)sx, (uint)sy, (uint)sz, paddedTopLodCellSize, sceneMin.x, sceneMin.y, sceneMin.z, sceneMax.x, sceneMax.y, sceneMax.z, floatData, outputFile, 4);
+    {
+        savePoints((uint)sx, (uint)sy, (uint)sz, paddedTopLodCellSize, sceneMin.x, sceneMin.y, sceneMin.z, sceneMax.x, sceneMax.y, sceneMax.z, distanceData, outputFile, false, false);
+    }
     else
+    {
+        std::vector<float> floatData(distanceData[0].begin(), distanceData[0].end());
         saveKTX(KTX_R32F, (uint)sx, (uint)sy, (uint)sz, floatData, outputFile, 4);
+    }
 
     std::cout << timestamp()
               << "Distance field saved to "
@@ -411,12 +389,12 @@ void printUsage()
 {
     std::cout << "Usage: process_model [options] input_file output_file\n"
               << "Options:\n"
-              << "  --list                List available meshes and exit\n"
               << "  --points              Save points file instead of KTX 3D texture\n"
               << "  --scale value         Scale factor to apply to the model\n"
               << "  --pixels value        Maximum pixel size for LOD 0\n"
               << "  --top-lod-cell-size value  Cell size for highest LOD\n"
               << "  --indices i1 i2 ...   Indices of meshes to process\n"
+              << "  --lod n               Number of LOD levels to process. By default 1\n"
               << "  --quality value       SDF quality: 0-3\n";
 }
 
@@ -436,17 +414,13 @@ int main(int argc, char *argv[])
         double scale = 1.0f;
         int pixels = 256;
         int quality = 0;
+        int lod = 1;
         int topLodCellSize = 8;
         std::vector<int> selectedIndices;
-        bool listOnly = false;
         bool points = false;
 
         for (size_t i = 0; i < args.size(); ++i)
         {
-            if (args[i] == "--list")
-            {
-                listOnly = true;
-            }
             if (args[i] == "--points")
             {
                 points = true;
@@ -462,6 +436,10 @@ int main(int argc, char *argv[])
             else if (args[i] == "--quality" && i + 1 < args.size())
             {
                 quality = std::stoi(args[++i]);
+            }
+            else if (args[i] == "--lod" && i + 1 < args.size())
+            {
+                lod = std::stoi(args[++i]);
             }
             else if (args[i] == "--top-lod-cell-size" && i + 1 < args.size())
             {
@@ -490,16 +468,22 @@ int main(int argc, char *argv[])
             return 1;
         }
 
-        if (listOnly)
-        {
-            printModelInfo(inputFile);
-            return 0;
-        }
-
         if (inputFile.empty() || outputFile.empty())
         {
             std::cerr << "Error: Both input and output files must be specified" << std::endl;
             printUsage();
+            return 1;
+        }
+
+        if (lod < 1)
+        {
+            std::cerr << "Error: LOD must be at least 1" << std::endl;
+            return 1;
+        }
+
+        if (lod > 10)
+        {
+            std::cerr << "Error: LOD must be at most 10" << std::endl;
             return 1;
         }
 
@@ -516,6 +500,7 @@ int main(int argc, char *argv[])
             outputFile,
             pixels,
             quality,
+            lod,
             topLodCellSize,
             scale,
             selectedIndices.empty() ? nullptr : &selectedIndices,

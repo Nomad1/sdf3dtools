@@ -24,6 +24,13 @@ constexpr uint KTX_FLOAT = 0x1406;
 constexpr uint KTX_HALF_FLOAT = 0x140B;
 constexpr uint KTX_KTX_UNSIGNED_BYTE = 0x1401;
 
+// Points file format constants
+constexpr uint8_t POINTS_SIGNATURE[] = { 'P', 'T', '0', '2' };
+
+constexpr uint POINTS_FLAG_UVS = 0x01;
+constexpr uint POINTS_FLAG_BONES = 0x02;
+constexpr uint POINTS_FLAG_LODS = 0x04;
+
 // Binary output stream wrapper
 class binary_ofstream : public std::ofstream {
 public:
@@ -43,7 +50,10 @@ std::string timestamp();
 void saveKTX(uint format, uint width, uint height, uint depth, 
              std::vector<float>& data, const std::string& outputFile, uint stride = 1);
 
+template<typename T>
 void savePoints(uint width, uint height, uint depth, uint cellSize, 
                 float lbx, float lby, float lbz,
                 float ubx, float uby, float ubz,
-                std::vector<float>& data, const std::string& outputFile, uint stride = 1);
+                const std::vector<std::vector<T>>& data, const std::string& outputFile,
+                bool hasUv,
+                bool hasBones);
