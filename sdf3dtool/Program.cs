@@ -6,6 +6,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Numerics;
 using RunServer.SdfTool;
 
 using SDFTool.Utils;
@@ -38,7 +39,9 @@ namespace SDFTool
 
             for (int l = 0; l < lodData.Length; l++)
             {
-                Console.WriteLine("[{0}] Saving LOD {1}: size {2}", sw.Elapsed, l, lodData[l].Size);
+                int lodNumber = l + 1;
+
+                Console.WriteLine("[{0}] Saving LOD {1}: size {2}", sw.Elapsed, lodNumber, lodData[l].Size);
 
 #if LOD2_16BIT
                 Array3D<ushort>[] lods = new Array3D<ushort>[1];
@@ -102,23 +105,73 @@ namespace SDFTool
                 Console.WriteLine("[{0}] Saving textures", sw.Elapsed);
 
 #if LOD2_8BIT
-                Ktx.SaveKTX(Ktx.KTX_R8, lods, outFile, "_lod_" + l + ".3d.ktx");
+                Ktx.SaveKTX(Ktx.KTX_R8, lods, outFile, "_lod_" + lodNumber + ".3d.ktx");
 #elif LOD2_16BIT
-                Ktx.SaveKTX(Ktx.KTX_R16F, lods, outFile, "_lod_" + l + ".3d.ktx");
+                Ktx.SaveKTX(Ktx.KTX_R16F, lods, outFile, "_lod_" + lodNumber + ".3d.ktx");
 #else
-                Ktx.SaveKTX(Ktx.KTX_R32F, lods, outFile, "_lod_" + l + ".3d.ktx");
+                Ktx.SaveKTX(Ktx.KTX_R32F, lods, outFile, "_lod_" + lodNumber + ".3d.ktx");
 #endif
 
-                Ktx.SaveKTX(Ktx.KTX_RG16F, uv, outFile, "_lod_" + l + "_uv.3d.ktx");
+                Ktx.SaveKTX(Ktx.KTX_RG16F, uv, outFile, "_lod_" + lodNumber + "_uv.3d.ktx");
 
                 if (children != null)
-                    Ktx.SaveKTX(Ktx.KTX_RGBA8, children, outFile, "_lod_" + l + "_children.3d.ktx");
+                    Ktx.SaveKTX(Ktx.KTX_RGBA8, children, outFile, "_lod_" + lodNumber + "_children.3d.ktx");
 
                 Console.WriteLine("[{0}] KTX saved, saving boundary mesh", sw.Elapsed);
                 MeshGenerator.Surface[] boxesSurface = new MeshGenerator.Surface[] { MeshGenerator.CreateBoxesMesh(boxes, "main_box") };
                 //Helper.SaveAssimpMesh(boxesSurface, outFile, new[] { bones }, scene.Animations, scene);
 
-                Umesh.SaveUMesh(boxesSurface, Path.GetFileNameWithoutExtension(outFile) + "_lod_" + l, bones, scene == null ? null : scene.Animations, scene, matrix);
+                Umesh.SaveUMesh(boxesSurface, outFile + "_lod_" + lodNumber, bones, scene == null ? null : scene.Animations, scene, matrix);
+
+                if (l == 0)
+                {
+                    int cellSize = data.CellSize;
+                    int cellsx = data.Size.X / data.CellSize + ((data.Size.X % data.CellSize != 0) ? 1 : 0);
+                    int cellsy = data.Size.Y / data.CellSize + ((data.Size.Y % data.CellSize != 0) ? 1 : 0);
+                    int cellsz = data.Size.Z / data.CellSize + ((data.Size.Z % data.CellSize != 0) ? 1 : 0);
+
+                    // TODO: save 4 components: distance, brick id, UV
+
+                    var lod0 = new Array3D<ushort>(2, cellsx, cellsy, cellsz);
+
+                    for (int iz = 0; iz < cellsz; iz++)
+                    {
+                        for (int iy = 0; iy < cellsy; iy++)
+                        {
+                            for (int ix = 0; ix < cellsx; ix++)
+                            {
+                                int index = cellSize * (ix + iy * data.Size.X + iz * data.Size.X * data.Size.Y);
+
+                                lod0[ix, iy, iz, 0] = Utils.Utils.PackFloatToUShort(data.Data[index].DistanceUV.X);
+                            }
+                        }
+                    }
+
+                    foreach (var brick in lodData[l].Bricks)
+                    {
+                        Vector3i pos = brick.Coord / data.CellSize;
+                        float dist = 0.0f;
+                        int count = 0;
+
+                        foreach (var cubePoints in brick.VertexDistances)
+                            foreach (var distance in cubePoints)
+                            {
+                                dist += distance;
+                                count++;
+                                break;
+                            }
+
+                        dist /= count;
+
+                        lod0[pos.X, pos.Y, pos.Z, 0] = Utils.Utils.PackFloatToUShort(dist);
+                        lod0[pos.X, pos.Y, pos.Z, 1] = Utils.Utils.PackFloatToUShort(brick.BrickId);
+                    }
+
+                    MeshGenerator.Surface[] mainBoxesSurface = new MeshGenerator.Surface[] { MeshGenerator.CreateBoxMesh(data.LowerBound, data.UpperBound, default(Matrix4x4), "box", true) };
+                    Umesh.SaveUMesh(mainBoxesSurface, outFile + "_lod_0", null, null, scene, matrix);
+
+                    Ktx.SaveKTX(Ktx.KTX_RG16F, lod0, outFile, "_lod_0.3d.ktx");
+                }
             }
         }
 

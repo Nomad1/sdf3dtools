@@ -42,7 +42,7 @@ namespace SDFTool.Utils
 
     public class Umesh
     {
-        public static int Signature = (int)(('u' | ('m' << 8) | ('0' << 16) | ('3' << 24)));
+        public static readonly uint Signature = (('u' | ('m' << 8) | ('0' << 16) | ('3' << 24)));
       
         /// <summary>
         /// Saves a mesh to custom .umesh format

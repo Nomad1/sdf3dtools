@@ -367,8 +367,37 @@ ProcessingMetadata processModel(const std::string &filename, const std::string &
     }
     else
     {
-        std::vector<float> floatData(distanceData[0].begin(), distanceData[0].end());
-        saveKTX(KTX_R32F, (uint)sx, (uint)sy, (uint)sz, floatData, outputFile, 4);
+        if (distanceData.size() == 1)
+        {
+            std::vector<float> floatData(distanceData[0].begin(), distanceData[0].end());
+            saveKTX(KTX_R32F, (uint)sx, (uint)sy, (uint)sz, floatData, outputFile, 4);
+        }
+        else
+        {
+            int curSX = sx;
+            int curSY = sy;
+            int curSZ = sz;
+
+            for (size_t i = 0; i < distanceData.size(); i++)
+            {
+                std::filesystem::path p(outputFile);
+                std::string ext = p.extension().string();
+                p.replace_extension();  // Remove last extension
+                ext = p.extension().string() + ext;  // Combine extensions
+                p.replace_extension("");  // Remove all extensions
+                std::string newPath = p.string() + ".lod" + std::to_string(i + 1) + ext;
+                // std::filesystem::path p(outputFile);
+                // std::string newPath = p.parent_path().string() + "/" + p.stem().string() +
+                //                       ".lod" + std::to_string(i + 1) + p.extension().string();
+                                      
+                std::vector<float> floatData(distanceData[i].begin(), distanceData[i].end());
+                saveKTX(KTX_R32F, (uint)curSX, (uint)curSY, (uint)curSZ, floatData, newPath, 4);
+
+                curSX = curSX * 2 - 1;
+                curSY = curSY * 2 - 1;
+                curSZ = curSZ * 2 - 1;
+            }
+        }
     }
 
     std::cout << timestamp()

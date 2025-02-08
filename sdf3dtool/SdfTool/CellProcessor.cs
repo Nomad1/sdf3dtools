@@ -28,6 +28,17 @@ namespace RunServer.SdfTool
 
     public struct DistanceData
     {
+        [Flags]
+        private enum PointFlags : uint
+        {
+            None = 0,
+            Uvs = 1,
+            Bones = 2,
+            Lods = 4
+        }
+
+        private static readonly uint Signature = (('P' | ('T' << 8) | ('0' << 16) | ('2' << 24)));
+
         public readonly int CellSize;
         public readonly PixelData[] Data;
         public readonly Vector3i Size;
@@ -47,6 +58,11 @@ namespace RunServer.SdfTool
         {
             using (System.IO.BinaryReader reader = new System.IO.BinaryReader(stream))
             {
+                uint signature = reader.ReadUInt32();
+
+                if (signature != Signature)
+                    throw new Exception("Invalid points v2 file signature: " + signature);
+
                 int sx = reader.ReadInt32();
                 int sy = reader.ReadInt32();
                 int sz = reader.ReadInt32();
@@ -61,23 +77,46 @@ namespace RunServer.SdfTool
                 LowerBound = new Vector3(lx, ly, lz);
                 UpperBound = new Vector3(ux, uy, uz);
 
+                PointFlags flags = (PointFlags)reader.ReadUInt32();
+
                 int length = reader.ReadInt32();
 
                 Data = new PixelData[length];
 
+                // TODO: if ((flags & PointFlags.Lods) != 0)
+
                 for (int i = 0; i < Data.Length; i++)
                 {
                     float dx = reader.ReadSingle();
-                    float dy = reader.ReadSingle();
-                    float dz = reader.ReadSingle();
-                    int bx = reader.ReadInt32();
-                    int by = reader.ReadInt32();
-                    int bz = reader.ReadInt32();
-                    int bw = reader.ReadInt32();
-                    float wx = reader.ReadSingle();
-                    float wy = reader.ReadSingle();
-                    float wz = reader.ReadSingle();
-                    float ww = reader.ReadSingle();
+
+                    float dy = 0.0f;
+                    float dz = 0.0f;
+                    if ((flags & PointFlags.Uvs) != 0)
+                    {
+                        dy = reader.ReadSingle();
+                        dz = reader.ReadSingle();
+                    }
+
+                    int bx = 0;
+                    int by = 0;
+                    int bz = 0;
+                    int bw = 0;
+                    float wx = 1.0f;
+                    float wy = 0.0f;
+                    float wz = 0.0f;
+                    float ww = 0.0f;
+
+                    if ((flags & PointFlags.Bones) != 0)
+                    {
+                        bx = reader.ReadInt32();
+                        by = reader.ReadInt32();
+                        bz = reader.ReadInt32();
+                        bw = reader.ReadInt32();
+                        wx = reader.ReadSingle();
+                        wy = reader.ReadSingle();
+                        wz = reader.ReadSingle();
+                        ww = reader.ReadSingle();
+                    }
 
                     Data[i] = new PixelData(dx, dy, dz, new Vector4i(bx, by, bz, bw), new Vector4(wx, wy, wz, ww));
                 }
@@ -124,14 +163,16 @@ namespace RunServer.SdfTool
         public struct BrickCellData
         {
             public readonly Vector3 Position;
+            public readonly Vector3i Coord;
             public readonly Vector3 Size;
             public readonly int BrickId;
             public readonly ValueTuple<int, float>[][] BoneWeights;
             public readonly float[][] VertexDistances;
 
-            public BrickCellData(int id, Vector3 position, Vector3 size, ValueTuple<int, float>[][] weights, float[][] distances)
+            public BrickCellData(int id, Vector3 position, Vector3i coord, Vector3 size, ValueTuple<int, float>[][] weights, float[][] distances)
             {
                 Position = position;
+                Coord = coord;
                 BrickId = id;
                 Size = size;
                 BoneWeights = weights;
@@ -326,7 +367,7 @@ namespace RunServer.SdfTool
 
                             float[][] vertexDistances = GetCubeDistances(data.Data, data.Size, dataStart, data.CellSize);
 
-                            boxes.Add(new BrickCellData(brickId, data.LowerBound + new Vector3(ix, iy, iz) * boxStep, boxStep, boxBones, vertexDistances));
+                            boxes.Add(new BrickCellData(brickId, data.LowerBound + new Vector3(ix, iy, iz) * boxStep, vindex, boxStep, boxBones, vertexDistances));
                         }
 
 
@@ -413,7 +454,7 @@ namespace RunServer.SdfTool
                 ValueTuple<int, float>[][] boxBones = GetCubeWeights(weightCache, data.Data, data.Size, brick.Position, data.CellSize, brick.Position / data.CellSize);
                 float[][] vertexDistances = GetCubeDistances(data.Data, data.Size, brick.Position, data.CellSize);
 
-                boxes[i] = new BrickCellData(i, data.LowerBound + boxStep * new Vector3(brick.Position.X, brick.Position.Y, brick.Position.Z) / data.CellSize, boxStep * brick.CellSize / data.CellSize, boxBones, vertexDistances);
+                boxes[i] = new BrickCellData(i, data.LowerBound + boxStep * new Vector3(brick.Position.X, brick.Position.Y, brick.Position.Z) / data.CellSize, brick.Position, boxStep * brick.CellSize / data.CellSize, boxBones, vertexDistances);
             }
 
             topLod = new LodData(topLodTextureSize, topLodDistances, topLoduv, boxes, null, new Vector3i(0, 0, 0));
@@ -445,8 +486,8 @@ namespace RunServer.SdfTool
 
                         float minDistance = float.MaxValue;
 
-                        int countPositive = 0;
-                        int countNegative = 0;
+                        int sign = 0;
+                        int count = 0;
 
                         for (int z = 0; z <= cellSize; z++)
                             for (int y = 0; y <= cellSize; y++)
@@ -455,12 +496,8 @@ namespace RunServer.SdfTool
                                     PixelData pixel = GetArrayData(data, dataSize, dataStart + new Vector3i(x, y, z));
 
                                     float distance = pixel.DistanceUV.X;
-
-                                    if (distance > 0)
-                                        countPositive++;
-                                    else
-                                        if (distance < 0)
-                                        countNegative++;
+                                    sign += Math.Sign(distance);
+                                    count++;
 
                                     if (Math.Abs(distance) < minDistance)
                                     {
@@ -469,7 +506,7 @@ namespace RunServer.SdfTool
                                 }
 
 
-                        if ((countPositive != 0 && countNegative != 0)) // all neg or all pos is ignored
+                        if (sign != count) // all neg or all pos is ignored
                         {
                             usedCells++;
                         }
@@ -816,7 +853,7 @@ namespace RunServer.SdfTool
                     ValueTuple<int, float>[][] boxBones = processWeights ? GetCubeWeights(weightCache, data.Data, data.Size, brick.Position, baseCellSize, brick.Position / data.CellSize) : null;
                     float[][] vertexDistances = GetCubeDistances(pixelData, blockSize, new Vector3i(0, 0, 0), baseCellSize);
 
-                    lodBoxes[i] = new BrickCellData(i, data.LowerBound + boxStep * new Vector3(brick.Position.X, brick.Position.Y, brick.Position.Z), boxStep * brick.CellSize, boxBones, vertexDistances);
+                    lodBoxes[i] = new BrickCellData(i, data.LowerBound + boxStep * new Vector3(brick.Position.X, brick.Position.Y, brick.Position.Z), brick.Position, boxStep * brick.CellSize, boxBones, vertexDistances);
                 }
 
                 lods[lod] = new LodData(lodTextureSize, lodDistances, lodUv, lodBoxes, lodChildren, lodChildrenSize);
@@ -852,7 +889,6 @@ namespace RunServer.SdfTool
             PixelData[] data, Vector3i dataSize,
             int cellSize,
             IList<BrickData> cells, Vector3i shift,
-
             int[] targetArray, Vector3i targetSize)
         {
             int cellsx = dataSize.X / cellSize;
@@ -873,8 +909,8 @@ namespace RunServer.SdfTool
                     {
                         Vector3i dataStart = new Vector3i(ix * cellSize, iy * cellSize, iz * cellSize);
 
-                        int countPositive = 0;
-                        int countNegative = 0;
+                        int sign = 0;
+                        int count = 0;
 
                         PixelData[] cellData = new PixelData[cellDimensions.X * cellDimensions.Y * cellDimensions.Z];
 
@@ -885,17 +921,13 @@ namespace RunServer.SdfTool
                                     PixelData pixel = GetArrayData(data, dataSize, dataStart + new Vector3i(x, y, z));
 
                                     float distance = pixel.DistanceUV.X;
-
-                                    if (distance > 0)
-                                        countPositive++;
-                                    else
-                                        if (distance < 0)
-                                        countNegative++;
+                                    sign += Math.Sign(distance);
+                                    count++;
 
                                     SetArrayData(cellData, pixel, cellDimensions, new Vector3i(x, y, z));
                                 }
 
-                        if (countPositive == 0 || countNegative == 0) // all neg or all pos is ignored
+                        if (sign == count) // all neg or all pos is ignored
                         {
                             continue;
                         }
