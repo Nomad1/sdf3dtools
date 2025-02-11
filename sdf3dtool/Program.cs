@@ -3,6 +3,8 @@
 #define LOD2_16BIT
 //#define OLD_MODE
 
+//#define SINGLE_LOD
+
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -30,7 +32,7 @@ namespace SDFTool
 
 #if SINGLE_LOD
             lodData = new CellProcessor.LodData[1];
-            CellProcessor.ProcessBricks(data, psnr, lodData[0]);
+            CellProcessor.ProcessBricks(data, psnr, out lodData[0]);
 #else
             // find non-empty cells
             
@@ -158,7 +160,7 @@ namespace SDFTool
                             {
                                 dist += distance;
                                 count++;
-                                break;
+                                //break;
                             }
 
                         dist /= count;

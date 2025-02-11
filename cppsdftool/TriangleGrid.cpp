@@ -298,6 +298,8 @@ std::vector<std::vector<double>> TriangleGrid::dispatch(const glm::dvec3 &lowerB
     // Calculate lower LODs by downsampling
     for (int l = lods - 2; l >= 0; --l)
     {
+        // double curPixelsToScene = 1.0 / (1 << l);
+        // double curSceneToPixels = 1 << l;
 
         int curSX = sx / 2 + 1;
         int curSY = sy / 2 + 1;
@@ -320,7 +322,7 @@ std::vector<std::vector<double>> TriangleGrid::dispatch(const glm::dvec3 &lowerB
                     int curIndex = (iz * curSY * curSX + iy * curSX + ix) * 4;
                     int prevIndex = (iz * 2 * sy * sx + iy * 2 * sx + ix * 2) * 4;
 
-                    results[l][curIndex] = results[l + 1][prevIndex];
+                    results[l][curIndex] = results[l + 1][prevIndex] / 2;
                     results[l][curIndex + 1] = results[l + 1][prevIndex + 1];
                     results[l][curIndex + 2] = results[l + 1][prevIndex + 2];
                     results[l][curIndex + 3] = results[l + 1][prevIndex + 3];
