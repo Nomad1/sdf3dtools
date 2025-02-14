@@ -898,7 +898,7 @@ namespace RunServer.SdfTool
 
             Vector3i blockSize = new Vector3i(paddedTopLodCellSize, paddedTopLodCellSize, paddedTopLodCellSize);
 
-            int lodLevels = 1;// (data.LodData.Length - 1) / 2 + 1;
+            int lodLevels = (data.LodData.Length - 1) / 2 + 1;
 
             Tuple<PixelData[], Vector3i>[] lodData = new Tuple<PixelData[], Vector3i>[lodLevels];
 
@@ -924,7 +924,7 @@ namespace RunServer.SdfTool
                 DebugLog("Processing lod {0}", lod);
                 resultBricks[lod] = new List<BrickData>();
 
-                //Dictionary<int, int> readyBricks = new Dictionary<int, int>();
+                Dictionary<int, int> readyBricks = new Dictionary<int, int>();
 
                 foreach(var brick in resultBricks[lod - 1])
                 {
@@ -935,14 +935,14 @@ namespace RunServer.SdfTool
                             for (int x = 0; x < cellSize + 1; x++)
                             {
                                 Vector3i brickPos = (position + new Vector3i(x, y, z)) * cellSize;
-                                /*int index = brickPos.X + brickPos.Y * lodData[lod].Item2.X + brickPos.Z * lodData[lod].Item2.X * lodData[lod].Item2.Y;
+                                int index = brickPos.X + brickPos.Y * lodData[lod].Item2.X + brickPos.Z * lodData[lod].Item2.X * lodData[lod].Item2.Y;
 
                                 int readyBrick;
                                 if (readyBricks.TryGetValue(index, out readyBrick))
                                 {
                                     brick.Children[x + y * (cellSize + 1) + z * (cellSize + 1) * (cellSize + 1)] = readyBrick;
                                     continue;
-                                }*/
+                                }
 
                                 PixelData[] newBrick = CheckBrick(lodData[lod].Item1, brickPos, lodData[lod].Item2, cellSize);
 
@@ -953,7 +953,7 @@ namespace RunServer.SdfTool
                                 resultBricks[lod].Add(new BrickData(id, brickPos, cellSize, newBrick, new int[(cellSize + 1) * (cellSize + 1) * (cellSize + 1)]));
 
                                 brick.Children[x + y * (cellSize + 1) + z * (cellSize + 1) * (cellSize + 1)] = id;
-                                //readyBricks[index] = id;
+                                readyBricks[index] = id;
                             }
                 }
 
