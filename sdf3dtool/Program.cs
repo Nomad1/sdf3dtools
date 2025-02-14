@@ -1,9 +1,14 @@
 ﻿//#define LOD0_8BIT
 //#define LOD2_8BIT
-#define LOD2_16BIT
+//#define LOD2_16BIT
+//#define LOD2_16BIT_U
 //#define OLD_MODE
 
 //#define SINGLE_LOD
+
+#define CHILDEN_IN_LOD
+
+//#define OLD_LODS
 
 using System;
 using System.Diagnostics;
@@ -33,10 +38,12 @@ namespace SDFTool
 #if SINGLE_LOD
             lodData = new CellProcessor.LodData[1];
             CellProcessor.ProcessBricks(data, psnr, out lodData[0]);
-#else
+#elif OLD_LODS
             // find non-empty cells
             
             CellProcessor.ProcessBricksWithLods(data, data.CellSize % 4 == 0 ? 4 : data.CellSize % 3 == 0 ? 3 : data.CellSize, scene != null, out lodData);
+#else
+            CellProcessor.ProcessBricksWithNestedLods(data, data.CellSize, scene != null, out lodData);
 #endif
 
             for (int l = 0; l < lodData.Length; l++)
@@ -45,21 +52,41 @@ namespace SDFTool
 
                 Console.WriteLine("[{0}] Saving LOD {1}: size {2}", sw.Elapsed, lodNumber, lodData[l].Size);
 
-#if LOD2_16BIT
-                Array3D<ushort>[] lods = new Array3D<ushort>[1];
-                {
-                    lods[0] = new Array3D<ushort>(1, lodData[l].Size.X, lodData[l].Size.Y, lodData[l].Size.Z);
-                    for (int j = 0; j < lodData[l].Distances.Length; j++)
-                        lods[0][j] = Utils.Utils.PackFloatToUShort(lodData[l].Distances[j]);
-                }
-#else
-                Array3D<float>[] lods = new Array3D<float>[1];
-                {
-                    lods[0] = new Array3D<float>(1, topLodTextureSize.X, topLodTextureSize.Y, topLodTextureSize.Z);
-                    for (int j = 0; j < alods.Length; j++)
-                        lods[0][j] = alods[j];
-                }
+                int lodComponents = 1;
+#if CHILDEN_IN_LOD
+                lodComponents = 2;
 #endif
+
+#if LOD2_16BIT || LOD2_16BIT_U
+                Array3D<ushort> lods = new Array3D<ushort>(lodComponents, lodData[l].Size.X, lodData[l].Size.Y, lodData[l].Size.Z);
+#else
+                Array3D<float> lods = new Array3D<float>(lodComponents, lodData[l].Size.X, lodData[l].Size.Y, lodData[l].Size.Z);
+#endif
+                for (int j = 0; j < lodData[l].Distances.Length; j++)
+                {
+                    int index = j;
+#if CHILDEN_IN_LOD
+                    index *= 2;
+#endif
+
+#if LOD2_16BIT
+                    lods[index] = Utils.Utils.PackFloatToUShort(lodData[l].Distances[j]);
+#if CHILDEN_IN_LOD
+                    lods[index + 1] = Utils.Utils.PackFloatToUShort(lodData[l].Children[j]);
+#endif
+#elif LOD2_16BIT_U
+                    lods[index] = (ushort)lodData[l].Distances[j];
+#if CHILDEN_IN_LOD
+                    lods[index + 1] = (ushort)lodData[l].Children[j];
+#endif
+#else
+                    lods[index] = lodData[l].Distances[j];
+#if CHILDEN_IN_LOD
+                    lods[index + 1] = lodData[l].Children[j];
+#endif
+#endif
+                }
+
 
                 Array3D<ushort> uv = new Array3D<ushort>(2, lodData[l].Size.X, lodData[l].Size.Y, lodData[l].Size.Z);
                 for (int j = 0; j < lodData[l].UV.Length; j++)
@@ -106,12 +133,26 @@ namespace SDFTool
 
                 Console.WriteLine("[{0}] Saving textures", sw.Elapsed);
 
+#if CHILDEN_IN_LOD
+#if LOD2_8BIT
+                Ktx.SaveKTX(Ktx.KTX_RG8, lods, outFile, "_lod_" + lodNumber + ".3d.ktx");
+#elif LOD2_16BIT
+                Ktx.SaveKTX(Ktx.KTX_RG16F, lods, outFile, "_lod_" + lodNumber + ".3d.ktx");
+#elif LOD2_16BIT_U
+                Ktx.SaveKTX(Ktx.KTX_RG16, lods, outFile, "_lod_" + lodNumber + ".3d.ktx");
+#else
+                Ktx.SaveKTX(Ktx.KTX_RG32F, lods, outFile, "_lod_" + lodNumber + ".3d.ktx");
+#endif
+#else
 #if LOD2_8BIT
                 Ktx.SaveKTX(Ktx.KTX_R8, lods, outFile, "_lod_" + lodNumber + ".3d.ktx");
 #elif LOD2_16BIT
                 Ktx.SaveKTX(Ktx.KTX_R16F, lods, outFile, "_lod_" + lodNumber + ".3d.ktx");
+#elif LOD2_16BIT_U
+                Ktx.SaveKTX(Ktx.KTX_R16, lods, outFile, "_lod_" + lodNumber + ".3d.ktx");
 #else
                 Ktx.SaveKTX(Ktx.KTX_R32F, lods, outFile, "_lod_" + lodNumber + ".3d.ktx");
+#endif
 #endif
 
                 Ktx.SaveKTX(Ktx.KTX_RG16F, uv, outFile, "_lod_" + lodNumber + "_uv.3d.ktx");
@@ -150,6 +191,7 @@ namespace SDFTool
                     }
 
                     foreach (var brick in lodData[l].Bricks)
+                    if (brick.BrickId != 0)
                     {
                         Vector3i pos = brick.Coord / data.CellSize;
                         float dist = 0.0f;

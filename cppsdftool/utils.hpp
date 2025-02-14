@@ -25,7 +25,7 @@ constexpr uint KTX_HALF_FLOAT = 0x140B;
 constexpr uint KTX_KTX_UNSIGNED_BYTE = 0x1401;
 
 // Points file format constants
-constexpr uint8_t POINTS_SIGNATURE[] = { 'P', 'T', '0', '2' };
+constexpr uint8_t POINTS_SIGNATURE[] = { 'P', 'T', '0', '3' };
 
 constexpr uint POINTS_FLAG_UVS = 0x01;
 constexpr uint POINTS_FLAG_BONES = 0x02;

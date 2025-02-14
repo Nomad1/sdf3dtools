@@ -146,6 +146,8 @@ void savePoints(uint width, uint height, uint depth, uint cellSize,
 
     writer.write(flags);
 
+    writer.write((uint)data.size());
+
     int stride = 4; // TODO: change if bones are included
 
     for (size_t l = 0; l < data.size(); ++l)

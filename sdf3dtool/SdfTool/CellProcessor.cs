@@ -8,6 +8,7 @@ using Vector3 = RunServer.SdfTool.Vector3e;
 using Vector4 = RunServer.SdfTool.Vector4e;
 #else
 using System.Numerics;
+using System.Runtime.CompilerServices;
 #endif
 
 namespace RunServer.SdfTool
@@ -37,18 +38,22 @@ namespace RunServer.SdfTool
             Lods = 4
         }
 
-        private static readonly uint Signature = (('P' | ('T' << 8) | ('0' << 16) | ('2' << 24)));
+        private static readonly uint Signature = (('P' | ('T' << 8) | ('0' << 16) | ('3' << 24)));
 
         public readonly int CellSize;
-        public readonly PixelData[] Data;
         public readonly Vector3i Size;
         public readonly Vector3 LowerBound;
         public readonly Vector3 UpperBound;
+        public readonly PixelData[][] LodData;
 
+        public PixelData[] Data
+        {
+            get { return LodData[0]; }
+        }
         public DistanceData(int cellSize, PixelData[] data, Vector3i size, Vector3 lowerBound, Vector3 upperBound)
         {
             CellSize = cellSize;
-            Data = data;
+            LodData = new PixelData[][] { data };
             Size = size;
             LowerBound = lowerBound;
             UpperBound = upperBound;
@@ -79,46 +84,51 @@ namespace RunServer.SdfTool
 
                 PointFlags flags = (PointFlags)reader.ReadUInt32();
 
-                int length = reader.ReadInt32();
+                int nlods = reader.ReadInt32();
 
-                Data = new PixelData[length];
+                LodData = new PixelData[nlods][];
 
-                // TODO: if ((flags & PointFlags.Lods) != 0)
-
-                for (int i = 0; i < Data.Length; i++)
+                for (int l = 0; l < nlods; l++)
                 {
-                    float dx = reader.ReadSingle();
+                    int length = reader.ReadInt32();
 
-                    float dy = 0.0f;
-                    float dz = 0.0f;
-                    if ((flags & PointFlags.Uvs) != 0)
+                    LodData[l] = new PixelData[length];
+
+                    for (int i = 0; i < length; i++)
                     {
-                        dy = reader.ReadSingle();
-                        dz = reader.ReadSingle();
+                        float dx = reader.ReadSingle();
+
+                        float dy = 0.0f;
+                        float dz = 0.0f;
+                        if ((flags & PointFlags.Uvs) != 0)
+                        {
+                            dy = reader.ReadSingle();
+                            dz = reader.ReadSingle();
+                        }
+
+                        int bx = 0;
+                        int by = 0;
+                        int bz = 0;
+                        int bw = 0;
+                        float wx = 1.0f;
+                        float wy = 0.0f;
+                        float wz = 0.0f;
+                        float ww = 0.0f;
+
+                        if ((flags & PointFlags.Bones) != 0)
+                        {
+                            bx = reader.ReadInt32();
+                            by = reader.ReadInt32();
+                            bz = reader.ReadInt32();
+                            bw = reader.ReadInt32();
+                            wx = reader.ReadSingle();
+                            wy = reader.ReadSingle();
+                            wz = reader.ReadSingle();
+                            ww = reader.ReadSingle();
+                        }
+
+                        LodData[l][i] = new PixelData(dx, dy, dz, new Vector4i(bx, by, bz, bw), new Vector4(wx, wy, wz, ww));
                     }
-
-                    int bx = 0;
-                    int by = 0;
-                    int bz = 0;
-                    int bw = 0;
-                    float wx = 1.0f;
-                    float wy = 0.0f;
-                    float wz = 0.0f;
-                    float ww = 0.0f;
-
-                    if ((flags & PointFlags.Bones) != 0)
-                    {
-                        bx = reader.ReadInt32();
-                        by = reader.ReadInt32();
-                        bz = reader.ReadInt32();
-                        bw = reader.ReadInt32();
-                        wx = reader.ReadSingle();
-                        wy = reader.ReadSingle();
-                        wz = reader.ReadSingle();
-                        ww = reader.ReadSingle();
-                    }
-
-                    Data[i] = new PixelData(dx, dy, dz, new Vector4i(bx, by, bz, bw), new Vector4(wx, wy, wz, ww));
                 }
             }
         }
@@ -183,13 +193,15 @@ namespace RunServer.SdfTool
         // for internal processing
         private struct BrickData
         {
+            public readonly int Id;
             public readonly Vector3i Position;
             public readonly int CellSize;
             public readonly PixelData[] Data;
             public readonly int[] Children;
 
-            public BrickData(Vector3i position, int cellSize, PixelData[] data, int[] children = null)
+            public BrickData(int id, Vector3i position, int cellSize, PixelData[] data, int[] children = null)
             {
+                Id = id;
                 CellSize = cellSize;
                 Data = data;
                 Position = position;
@@ -692,8 +704,8 @@ namespace RunServer.SdfTool
 
                             // add result to `cells`
 
-                            cells.Add(new BrickData(dataStart, cellSize, brick));
                             cellCount++;
+                            cells.Add(new BrickData(cellCount, dataStart, cellSize, brick));
                         }
                     }
 
@@ -713,14 +725,14 @@ namespace RunServer.SdfTool
             out LodData[] lods
             )
         {
-            Dictionary<Vector3i, ValueTuple<int, float>[]> weightCache = new Dictionary<Vector3i, ValueTuple<int, float>[]>();
-
             int cellSize = data.CellSize;
             if (cellSize != 4 && cellSize != 16 && cellSize != 64 && cellSize != 256 &&
                 cellSize != 3 && cellSize != 9 && cellSize != 27 && cellSize != 81)
             {
                 throw new Exception("Only cell size 4^x and 3^x are supported at the moment!");
             }
+
+            Dictionary<Vector3i, ValueTuple<int, float>[]> weightCache = new Dictionary<Vector3i, ValueTuple<int, float>[]>();
 
             int cellsx = data.Size.X / baseCellSize;
             int cellsy = data.Size.Y / baseCellSize;
@@ -754,7 +766,7 @@ namespace RunServer.SdfTool
 
             DebugLog("Processing lod {0}, cell size {1}", 0, ncellSize);
             // lod 0 is added as is2z3zxv4cb5v68789m,,,,,,,,0.-/////////.0,9m.p8ionuobyi j  hf g f
-            FindFixedBricks(data.Data, data.Size, ncellSize, resultBricks[0], new Vector3i(0, 0, 0), lod0, new Vector3i(cellsx, cellsy, cellsz));
+            FindFixedBricks(data.Data, data.Size, ncellSize, resultBricks[0], new Vector3i(0, 0, 0), lod0, new Vector3i(cellsx, cellsy, cellsz), (int)Math.Round(Math.Sqrt(cellSize)));
             DebugLog("Brick count: {0}", resultBricks[0].Count);
 
             for (int lod = 1; lod < lodLevels; lod++)
@@ -769,7 +781,7 @@ namespace RunServer.SdfTool
                     int index = resultBricks[lod].Count;
 
                     FindFixedBricks(brick.Data, new Vector3i(brick.CellSize + 1, brick.CellSize + 1, brick.CellSize + 1), ncellSize,
-                        resultBricks[lod], brick.Position, brick.Children, new Vector3i(baseCellSize, baseCellSize, baseCellSize));
+                        resultBricks[lod], brick.Position, brick.Children, new Vector3i(baseCellSize, baseCellSize, baseCellSize), (int)Math.Round(Math.Sqrt(ncellSize)));
                 }
 
                 DebugLog("Brick count: {0}", resultBricks[lod].Count);
@@ -862,6 +874,172 @@ namespace RunServer.SdfTool
             return lodLevels;
         }
 
+        public static int ProcessBricksWithNestedLods(
+            DistanceData data,
+            int baseCellSize,
+            bool processWeights,
+
+            out LodData[] lods
+            )
+        {
+            int cellSize = data.CellSize;
+            if (cellSize != 4)
+            {
+                throw new Exception("Only cell size 4 is supported at the moment!");
+            }
+
+            Dictionary<Vector3i, ValueTuple<int, float>[]> weightCache = new Dictionary<Vector3i, ValueTuple<int, float>[]>();
+
+            int cellsx = data.Size.X / baseCellSize;
+            int cellsy = data.Size.Y / baseCellSize;
+            int cellsz = data.Size.Z / baseCellSize;
+
+            int paddedTopLodCellSize = baseCellSize + 1;
+
+            Vector3i blockSize = new Vector3i(paddedTopLodCellSize, paddedTopLodCellSize, paddedTopLodCellSize);
+
+            int lodLevels = 1;// (data.LodData.Length - 1) / 2 + 1;
+
+            Tuple<PixelData[], Vector3i>[] lodData = new Tuple<PixelData[], Vector3i>[lodLevels];
+
+            Vector3i lodSize = data.Size;
+
+            for (int l = 0; l < lodLevels; l++)
+            {
+                lodData[l] = new Tuple<PixelData[], Vector3i>(data.LodData[l * 2], lodSize);
+                lodSize = new Vector3i((lodSize.X - 1) * cellSize + 1, (lodSize.Y - 1) * cellSize + 1, (lodSize.Z - 1) * cellSize + 1);
+            }
+
+            DebugLog("Processing {0} lod levels, from {1} to {2}", lodLevels, baseCellSize, cellSize);
+
+            List<BrickData>[] resultBricks = new List<BrickData>[lodLevels];
+            resultBricks[0] = new List<BrickData>();
+
+            DebugLog("Processing lod {0}, cell size {1}", 0, cellSize);
+            int totalBricks = FindFixedBricks(lodData[0].Item1, lodData[0].Item2, cellSize, resultBricks[0], new Vector3i(0, 0, 0), null, new Vector3i(cellsx, cellsy, cellsz), cellSize + 1);
+            DebugLog("LOD0 Brick count: {0}", totalBricks);
+
+            for (int lod = 1; lod < lodLevels; lod++)
+            {
+                DebugLog("Processing lod {0}", lod);
+                resultBricks[lod] = new List<BrickData>();
+
+                //Dictionary<int, int> readyBricks = new Dictionary<int, int>();
+
+                foreach(var brick in resultBricks[lod - 1])
+                {
+                    Vector3i position = brick.Position;
+
+                    for (int z = 0; z < cellSize + 1; z++)
+                        for (int y = 0; y < cellSize + 1; y++)
+                            for (int x = 0; x < cellSize + 1; x++)
+                            {
+                                Vector3i brickPos = (position + new Vector3i(x, y, z)) * cellSize;
+                                /*int index = brickPos.X + brickPos.Y * lodData[lod].Item2.X + brickPos.Z * lodData[lod].Item2.X * lodData[lod].Item2.Y;
+
+                                int readyBrick;
+                                if (readyBricks.TryGetValue(index, out readyBrick))
+                                {
+                                    brick.Children[x + y * (cellSize + 1) + z * (cellSize + 1) * (cellSize + 1)] = readyBrick;
+                                    continue;
+                                }*/
+
+                                PixelData[] newBrick = CheckBrick(lodData[lod].Item1, brickPos, lodData[lod].Item2, cellSize);
+
+                                if (newBrick == null)
+                                    continue;
+
+                                int id = ++totalBricks;
+                                resultBricks[lod].Add(new BrickData(id, brickPos, cellSize, newBrick, new int[(cellSize + 1) * (cellSize + 1) * (cellSize + 1)]));
+
+                                brick.Children[x + y * (cellSize + 1) + z * (cellSize + 1) * (cellSize + 1)] = id;
+                                //readyBricks[index] = id;
+                            }
+                }
+
+                DebugLog("Brick count: {0}", resultBricks[lod].Count);
+            }
+
+            List<BrickData> allBricks = new List<BrickData>();
+            for (int lod = 0; lod < lodLevels; lod++)
+                allBricks.AddRange(resultBricks[lod]);
+
+            int packx;
+            int packy;
+            int packz;
+            FindBestDividers(allBricks.Count, out packx, out packy, out packz, 256);
+            Vector3i pack = new Vector3i(packx, packy, packz);
+
+            Vector3 boxStep = (data.UpperBound - data.LowerBound) / (new Vector3(cellsx, cellsy, cellsz) * baseCellSize);
+
+            lods = new LodData[1];
+
+            {
+                DebugLog("Generating LOD1 boxes");
+
+                BrickCellData[] lodBoxes = new BrickCellData[resultBricks[0].Count + 1];
+
+                foreach(BrickData brick in resultBricks[0])
+                {
+                    PixelData[] pixelData = brick.Data;
+
+                    ValueTuple<int, float>[][] boxBones = processWeights ? GetCubeWeights(weightCache, data.Data, data.Size, brick.Position, baseCellSize, brick.Position / data.CellSize) : null;
+                    float[][] vertexDistances = GetCubeDistances(pixelData, blockSize, new Vector3i(0, 0, 0), baseCellSize);
+
+                    lodBoxes[brick.Id] = new BrickCellData(brick.Id, data.LowerBound + boxStep * new Vector3(brick.Position.X, brick.Position.Y, brick.Position.Z), brick.Position, boxStep * brick.CellSize, boxBones, vertexDistances);
+                }
+
+                DebugLog("Packing");
+
+                Vector3i lodTextureSize = pack * paddedTopLodCellSize;
+                float[] lodDistances = new float[lodTextureSize.X * lodTextureSize.Y * lodTextureSize.Z];
+                Vector2[] lodUv = new Vector2[lodTextureSize.X * lodTextureSize.Y * lodTextureSize.Z];
+                int[] lodChildren = new int[lodTextureSize.X * lodTextureSize.Y * lodTextureSize.Z];
+
+                int pxy = pack.X * pack.Y;
+
+                for (int i = 0; i < allBricks.Count; i++)
+                {
+                    BrickData brick = allBricks[i];
+
+                    PixelData[] pixelData = brick.Data;
+
+                    int id = brick.Id;
+
+                    int atlasZ = ((id / pxy));
+                    int atlasY = ((id % pxy) / pack.X);
+                    int atlasX = ((id % pxy) % pack.X);
+
+                    Vector3i blockStart = new Vector3i(atlasX * paddedTopLodCellSize, atlasY * paddedTopLodCellSize, atlasZ * paddedTopLodCellSize);
+
+                    for (int z = 0; z < paddedTopLodCellSize; z++)
+                        for (int y = 0; y < paddedTopLodCellSize; y++)
+                            for (int x = 0; x < paddedTopLodCellSize; x++)
+                            {
+                                Vector3i coord = new Vector3i(x, y, z);
+
+                                PixelData pixel = GetArrayData(pixelData, blockSize, coord);
+
+                                // distance in X coord
+                                SetArrayData(lodDistances, pixel.DistanceUV.X * data.CellSize / brick.CellSize, lodTextureSize, blockStart + coord);
+
+                                // texture UV coords in YZ
+                                SetArrayData(lodUv, new Vector2(pixel.DistanceUV.Y, pixel.DistanceUV.Z), lodTextureSize, blockStart + coord);
+
+                                if (brick.Children != null)
+                                {
+                                    int childData = GetArrayData(brick.Children, blockSize, coord);
+                                    SetArrayData(lodChildren, childData, lodTextureSize, blockStart + coord);
+                                }
+                            }
+
+                    lods[0] = new LodData(lodTextureSize, lodDistances, lodUv, lodBoxes, lodChildren, lodTextureSize);
+                }
+            }
+            
+            return lodLevels;
+        }
+
         private static Vector3i Unpack(int i, Vector3i pack)
         {
             int pxy = pack.X * pack.Y;
@@ -872,6 +1050,40 @@ namespace RunServer.SdfTool
             int atlasX = ((i % pxy) % pack.X);
 
             return new Vector3i(atlasX, atlasY, atlasZ);
+        }
+
+        private static PixelData[] CheckBrick(PixelData[] data, Vector3i dataStart, Vector3i dataSize, int cellSize)
+        {
+            int sign = 0;
+            int count = 0;
+
+            // do a first run to know if we are processing this brick at all
+            for (int z = 0; z <= cellSize; z++)
+                for (int y = 0; y <= cellSize; y++)
+                    for (int x = 0; x <= cellSize; x++)
+                    {
+                        PixelData pixel = GetArrayData(data, dataSize, dataStart + new Vector3i(x, y, z));
+
+                        float distance = pixel.DistanceUV.X;
+                        sign += Math.Sign(distance);
+                        count++;
+                    }
+
+            if (sign == count) // all neg or all pos is ignored
+                return null;
+
+            PixelData[] brick = new PixelData[(cellSize + 1) * (cellSize + 1) * (cellSize + 1)];
+
+            for (int z = 0; z <= cellSize; z++)
+                for (int y = 0; y <= cellSize; y++)
+                    for (int x = 0; x <= cellSize; x++)
+                    {
+                        PixelData pixel = GetArrayData(data, dataSize, dataStart + new Vector3i(x, y, z));
+                        SetArrayData(brick, pixel, new Vector3i(cellSize + 1, cellSize + 1, cellSize + 1), new Vector3i(x, y, z));
+                    }
+
+            return brick;
+
         }
 
         /// <summary>
@@ -889,15 +1101,13 @@ namespace RunServer.SdfTool
             PixelData[] data, Vector3i dataSize,
             int cellSize,
             IList<BrickData> cells, Vector3i shift,
-            int[] targetArray, Vector3i targetSize)
+            int[] targetArray, Vector3i targetSize, int childCellSize)
         {
             int cellsx = dataSize.X / cellSize;
             int cellsy = dataSize.Y / cellSize;
             int cellsz = dataSize.Z / cellSize;
 
-            Vector3i cellDimensions = new Vector3i(cellSize + 1, cellSize + 1, cellSize + 1);
-
-            int childCell = (int)Math.Round(Math.Sqrt(cellSize));
+            int childCell = childCellSize;
 
             int cellCount = 0;
 
@@ -907,44 +1117,21 @@ namespace RunServer.SdfTool
                 {
                     for (int ix = 0; ix < cellsx; ix++)
                     {
-                        Vector3i dataStart = new Vector3i(ix * cellSize, iy * cellSize, iz * cellSize);
+                        Vector3i coord = new Vector3i(ix, iy, iz);
+                        PixelData [] brick = CheckBrick(data, coord * cellSize, dataSize, cellSize);
 
-                        int sign = 0;
-                        int count = 0;
-
-                        PixelData[] cellData = new PixelData[cellDimensions.X * cellDimensions.Y * cellDimensions.Z];
-
-                        for (int z = 0; z <= cellSize; z++)
-                            for (int y = 0; y <= cellSize; y++)
-                                for (int x = 0; x <= cellSize; x++)
-                                {
-                                    PixelData pixel = GetArrayData(data, dataSize, dataStart + new Vector3i(x, y, z));
-
-                                    float distance = pixel.DistanceUV.X;
-                                    sign += Math.Sign(distance);
-                                    count++;
-
-                                    SetArrayData(cellData, pixel, cellDimensions, new Vector3i(x, y, z));
-                                }
-
-                        if (sign == count) // all neg or all pos is ignored
+                        if (brick != null)
                         {
-                            continue;
+                            // add result to `cells`
+
+                            int index = cells.Count;
+
+                            if (targetArray != null)
+                                SetArrayData(targetArray, index, targetSize, coord);
+
+                            cellCount++;
+                            cells.Add(new BrickData(cellCount, coord * cellSize + shift, cellSize, brick, new int[childCell * childCell * childCell]));
                         }
-
-                        PixelData[] brick = cellData;
-
-                        // add result to `cells`
-
-                        int index = cells.Count;
-
-                        if (targetArray != null)
-                        {
-                            SetArrayData(targetArray, index, targetSize, new Vector3i(ix, iy, iz));
-                        }
-
-                        cells.Add(new BrickData(dataStart + shift, cellSize, brick, new int[childCell * childCell * childCell]));
-                        cellCount++;
                     }
                 }
             }

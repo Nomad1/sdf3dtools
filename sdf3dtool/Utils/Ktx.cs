@@ -1,6 +1,5 @@
 ﻿using System;
 using System.IO;
-using System.Diagnostics;
 
 namespace SDFTool.Utils
 {
@@ -16,6 +15,7 @@ namespace SDFTool.Utils
         public const int KTX_RG16F = 0x822F;
         public const int KTX_R16F = 0x822D;
         public const int KTX_R32F = 0x822E;
+        public const int KTX_RG32F = 0x8230;
         public const int KTX_R8 = 0x1903;
         public const int KTX_RGBA8 = 0x8058;
         public const int KTX_RGB8 = 0x1907;
@@ -51,6 +51,11 @@ namespace SDFTool.Utils
             SaveKTX(format, arrays[0].Width, arrays[0].Height, arrays[0].Depth, data, Path.GetFileNameWithoutExtension(outFile) + extension);
         }
 
+        public static void SaveKTX(int format, Array3D<float> array3d, string outFile, string extension)
+        {
+            SaveKTX(format, array3d.Width, array3d.Height, array3d.Depth, new float[][] { array3d.Data }, Path.GetFileNameWithoutExtension(outFile) + extension);
+        }
+
         public static void SaveKTX(int format, Array3D<ushort> array3d, string outFile, string extension)
         {
             SaveKTX(format, array3d.Width, array3d.Height, array3d.Depth, new ushort[][] { array3d.Data }, Path.GetFileNameWithoutExtension(outFile) + extension);
@@ -59,6 +64,11 @@ namespace SDFTool.Utils
         public static void SaveKTX(int format, Array3D<byte> array3d, string outFile, string extension)
         {
             SaveKTX(format, array3d.Width, array3d.Height, array3d.Depth, new byte[][] { array3d.Data }, Path.GetFileNameWithoutExtension(outFile) + extension);
+        }
+
+        public static void SaveKTX(int format, Array2D<float> array2d, string outFile, string extension)
+        {
+            SaveKTX(format, array2d.Width, array2d.Height, 0, new float[][] { array2d.Data }, Path.GetFileNameWithoutExtension(outFile) + extension);
         }
 
         public static void SaveKTX(int format, Array2D<ushort> array2d, string outFile, string extension)
