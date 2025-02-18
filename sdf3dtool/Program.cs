@@ -207,7 +207,7 @@ namespace SDFTool
                             {
                                 int index = cellSize * (ix + iy * data.Size.X + iz * data.Size.X * data.Size.Y);
 
-                                lod0[ix, iy, iz, 0] = Utils.Utils.PackFloatToUShort(data.Data[index].DistanceUV.X);
+                                lod0[ix, iy, iz, 0] = Utils.Utils.PackFloatToUShort(data.Data[index].DistanceUV.X / data.CellSize);
                             }
                         }
                     }
@@ -229,7 +229,7 @@ namespace SDFTool
 
                         dist /= count;
 
-                        lod0[pos.X, pos.Y, pos.Z, 0] = Utils.Utils.PackFloatToUShort(dist);
+                        lod0[pos.X, pos.Y, pos.Z, 0] = Utils.Utils.PackFloatToUShort(dist / data.CellSize);
                         lod0[pos.X, pos.Y, pos.Z, 1] = Utils.Utils.PackFloatToUShort(brick.BrickId);
                     }
 

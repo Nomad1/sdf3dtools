@@ -456,7 +456,7 @@ namespace RunServer.SdfTool
                             PixelData pixel = GetArrayData(brick.Data, blockSize, coord);
 
                             // higher LOD
-                            SetArrayData(topLodDistances, pixel.DistanceUV.X * data.CellSize / brick.CellSize, topLodTextureSize, blockStart + coord);
+                            SetArrayData(topLodDistances, pixel.DistanceUV.X /* data.CellSize*/ / brick.CellSize, topLodTextureSize, blockStart + coord);
 
                             // texture UV coords
                             SetArrayData(topLoduv, new Vector2(pixel.DistanceUV.Y, pixel.DistanceUV.Z), topLodTextureSize, blockStart + coord);
@@ -839,7 +839,7 @@ namespace RunServer.SdfTool
                                 PixelData pixel = GetArrayData(pixelData, blockSize, coord);
 
                                 // distance in X coord
-                                SetArrayData(lodDistances, pixel.DistanceUV.X * data.CellSize / brick.CellSize, lodTextureSize, blockStart + coord);
+                                SetArrayData(lodDistances, pixel.DistanceUV.X /* data.CellSize*/ / brick.CellSize, lodTextureSize, blockStart + coord);
 
                                 // texture UV coords in YZ
                                 SetArrayData(lodUv, new Vector2(pixel.DistanceUV.Y, pixel.DistanceUV.Z), lodTextureSize, blockStart + coord);
@@ -1021,7 +1021,7 @@ namespace RunServer.SdfTool
                                 PixelData pixel = GetArrayData(pixelData, blockSize, coord);
 
                                 // distance in X coord
-                                SetArrayData(lodDistances, pixel.DistanceUV.X * data.CellSize / brick.CellSize, lodTextureSize, blockStart + coord);
+                                SetArrayData(lodDistances, pixel.DistanceUV.X /* data.CellSize*/ / brick.CellSize, lodTextureSize, blockStart + coord);
 
                                 // texture UV coords in YZ
                                 SetArrayData(lodUv, new Vector2(pixel.DistanceUV.Y, pixel.DistanceUV.Z), lodTextureSize, blockStart + coord);

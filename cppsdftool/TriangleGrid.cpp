@@ -211,18 +211,17 @@ const glm::ivec3 &TriangleGrid::getGridSize() const
     return gridSize;
 }
 
-std::vector<std::vector<double>> TriangleGrid::dispatch(const glm::dvec3 &lowerBound, double pixelsToScene, int lodCellSize,
+std::vector<std::vector<double>> TriangleGrid::dispatch(const glm::dvec3 &lowerBound, double pixelsToScene, int lowerLodPixels,
                                                         int sx, int sy, int sz, const int quality,
                                                         const uint lods)
 {
     std::vector<std::vector<double>> results;
     results.resize(lods);
 
-    int cellSize = lodCellSize;
 #ifdef CALC_ALL_LODS
     for (size_t l = 0; l < lods; ++l)
     {
-        double sceneToPixels = pixelsToScene / cellSize;
+        double sceneToPixels = pixelsToScene / lowerLodPixels;
 
         std::cout << timestamp()
                   << "Processing LOD " << (l + 1)
@@ -267,8 +266,7 @@ std::vector<std::vector<double>> TriangleGrid::dispatch(const glm::dvec3 &lowerB
     sx = sx * scale - (scale - 1);
     sy = sy * scale - (scale - 1);
     sz = sz * scale - (scale - 1);
-    cellSize = (lodCellSize - 1) * scale;
-    pixelsToScene /= scale;
+    double currentPixelsToScene = pixelsToScene / (lowerLodPixels * scale);
 
     // Process highest resolution first (last LOD)
     std::vector<double> &lastLOD = results[lods - 1];
@@ -277,7 +275,6 @@ std::vector<std::vector<double>> TriangleGrid::dispatch(const glm::dvec3 &lowerB
     std::cout << timestamp()
               << "Processing LOD " << (lods)
               << ", size: [" << sx << ", " << sy << ", " << sz << "]"
-              << ", cell size: " << cellSize
               << std::endl;
 
     #pragma omp parallel for schedule(dynamic) collapse(3)
@@ -288,11 +285,11 @@ std::vector<std::vector<double>> TriangleGrid::dispatch(const glm::dvec3 &lowerB
             for (int ix = 0; ix < sx; ++ix)
             {
                 int index = (iz * sy * sx + iy * sx + ix) * 4;
-                glm::dvec3 point = lowerBound + glm::dvec3(ix, iy, iz) * pixelsToScene;
+                glm::dvec3 point = lowerBound + glm::dvec3(ix, iy, iz) * currentPixelsToScene;
                 auto [distance, weights, triangleId] = findTriangles(point, quality);
-                double pixelDistance = distance / (pixelsToScene * (double)cellSize);
+                double pixelDistance = distance / currentPixelsToScene;// / (pixelsToScene * (double)cellSize);
 
-                lastLOD[index] = pixelDistance;
+                lastLOD[index + 0] = pixelDistance;
                 lastLOD[index + 1] = weights.x;
                 lastLOD[index + 2] = weights.y;
                 lastLOD[index + 3] = static_cast<double>(triangleId);
@@ -303,17 +300,15 @@ std::vector<std::vector<double>> TriangleGrid::dispatch(const glm::dvec3 &lowerB
     // Calculate lower LODs by downsampling
     for (int l = lods - 2; l >= 0; --l)
     {
-        int prevCellSize = cellSize;
-        cellSize = cellSize / 2;
-
         int curSX = sx / 2 + 1;
         int curSY = sy / 2 + 1;
         int curSZ = sz / 2 + 1;
 
+        double nextPixelsToScene = pixelsToScene / (lowerLodPixels * (1 << l));
+
         std::cout << timestamp()
                   << "Processing LOD " << (l + 1)
                   << ", size: [" << curSX << ", " << curSY << ", " << curSZ << "]"
-                  << ", cell size: " << cellSize
                   << std::endl;
 
         results[l].resize(curSX * curSY * curSZ * 4);
@@ -328,7 +323,7 @@ std::vector<std::vector<double>> TriangleGrid::dispatch(const glm::dvec3 &lowerB
                     int curIndex = (iz * curSY * curSX + iy * curSX + ix) * 4;
                     int prevIndex = (iz * 2 * sy * sx + iy * 2 * sx + ix * 2) * 4;
 
-                    results[l][curIndex] = results[l + 1][prevIndex] * (double)cellSize / (double)prevCellSize;
+                    results[l][curIndex + 0] = results[l + 1][prevIndex + 0] * currentPixelsToScene / nextPixelsToScene;// * (double)cellSize / (double)prevCellSize;
                     results[l][curIndex + 1] = results[l + 1][prevIndex + 1];
                     results[l][curIndex + 2] = results[l + 1][prevIndex + 2];
                     results[l][curIndex + 3] = results[l + 1][prevIndex + 3];
@@ -339,6 +334,7 @@ std::vector<std::vector<double>> TriangleGrid::dispatch(const glm::dvec3 &lowerB
         sx = curSX;
         sy = curSY;
         sz = curSZ;
+        currentPixelsToScene = nextPixelsToScene;
     }
 
 #endif
