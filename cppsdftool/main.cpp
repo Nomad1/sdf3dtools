@@ -351,7 +351,7 @@ ProcessingMetadata processModel(const std::string &filename, const std::string &
     std::vector<std::vector<double>> distanceData = triangleGrid.dispatch(
         lowerBound,
         pixelsToScene,
-        sceneToPixels / paddedTopLodCellSize,
+        topLodCellSize,
         sx, sy, sz, quality, lod);
 
     std::cout << timestamp()

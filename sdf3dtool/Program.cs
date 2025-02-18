@@ -3,6 +3,7 @@
 //#define LOD2_16BIT
 //#define LOD2_16BIT_U
 //#define OLD_MODE
+#define LOD2_RGBA
 
 //#define SINGLE_LOD
 
@@ -57,7 +58,9 @@ namespace SDFTool
                 lodComponents = 2;
 #endif
 
-#if LOD2_16BIT || LOD2_16BIT_U
+#if LOD2_RGBA
+                Array3D<byte> lods = new Array3D<byte>(lodComponents == 1 ? 1 : 4, lodData[l].Size.X, lodData[l].Size.Y, lodData[l].Size.Z);
+#elif LOD2_16BIT || LOD2_16BIT_U
                 Array3D<ushort> lods = new Array3D<ushort>(lodComponents, lodData[l].Size.X, lodData[l].Size.Y, lodData[l].Size.Z);
 #else
                 Array3D<float> lods = new Array3D<float>(lodComponents, lodData[l].Size.X, lodData[l].Size.Y, lodData[l].Size.Z);
@@ -65,6 +68,20 @@ namespace SDFTool
                 for (int j = 0; j < lodData[l].Distances.Length; j++)
                 {
                     int index = j;
+
+#if LOD2_RGBA
+#if CHILDEN_IN_LOD
+                    index *= 4;
+#endif
+
+                    lods[index] = Utils.Utils.PackFloatToSByte(lodData[l].Distances[j]);
+#if CHILDEN_IN_LOD
+                    lods[index + 1] = (byte)(lodData[l].Children[j] >> 16);
+                    lods[index + 2] = (byte)(lodData[l].Children[j] >> 8);
+                    lods[index + 3] = (byte)(lodData[l].Children[j]);
+#endif
+#else
+
 #if CHILDEN_IN_LOD
                     index *= 2;
 #endif
@@ -83,6 +100,7 @@ namespace SDFTool
                     lods[index] = lodData[l].Distances[j];
 #if CHILDEN_IN_LOD
                     lods[index + 1] = lodData[l].Children[j];
+#endif
 #endif
 #endif
                 }
@@ -111,6 +129,7 @@ namespace SDFTool
                     boxes[i].SetCubeVertexData(lodData[l].Bricks[i].VertexDistances, lodData[l].Bricks[i].BoneWeights);
                 }
 
+#if !CHILDEN_IN_LOD
                 Array3D<byte>[] children = null;
 
                 if (l != lodData.Length - 1)
@@ -129,12 +148,14 @@ namespace SDFTool
                         }
                     }
                 }
-
+#endif
 
                 Console.WriteLine("[{0}] Saving textures", sw.Elapsed);
 
 #if CHILDEN_IN_LOD
-#if LOD2_8BIT
+#if LOD2_RGBA
+                Ktx.SaveKTX(Ktx.KTX_RGBA8, lods, outFile, "_lod_" + lodNumber + ".3d.ktx");
+#elif LOD2_8BIT
                 Ktx.SaveKTX(Ktx.KTX_RG8, lods, outFile, "_lod_" + lodNumber + ".3d.ktx");
 #elif LOD2_16BIT
                 Ktx.SaveKTX(Ktx.KTX_RG16F, lods, outFile, "_lod_" + lodNumber + ".3d.ktx");
@@ -144,7 +165,7 @@ namespace SDFTool
                 Ktx.SaveKTX(Ktx.KTX_RG32F, lods, outFile, "_lod_" + lodNumber + ".3d.ktx");
 #endif
 #else
-#if LOD2_8BIT
+#if LOD2_8BIT || LOD2_RGBA
                 Ktx.SaveKTX(Ktx.KTX_R8, lods, outFile, "_lod_" + lodNumber + ".3d.ktx");
 #elif LOD2_16BIT
                 Ktx.SaveKTX(Ktx.KTX_R16F, lods, outFile, "_lod_" + lodNumber + ".3d.ktx");
@@ -157,9 +178,10 @@ namespace SDFTool
 
                 Ktx.SaveKTX(Ktx.KTX_RG16F, uv, outFile, "_lod_" + lodNumber + "_uv.3d.ktx");
 
+#if !CHILDEN_IN_LOD
                 if (children != null)
                     Ktx.SaveKTX(Ktx.KTX_RGBA8, children, outFile, "_lod_" + lodNumber + "_children.3d.ktx");
-
+#endif
                 Console.WriteLine("[{0}] KTX saved, saving boundary mesh", sw.Elapsed);
                 MeshGenerator.Surface[] boxesSurface = new MeshGenerator.Surface[] { MeshGenerator.CreateBoxesMesh(boxes, "main_box") };
                 //Helper.SaveAssimpMesh(boxesSurface, outFile, new[] { bones }, scene.Animations, scene);
@@ -169,9 +191,9 @@ namespace SDFTool
                 if (l == 0)
                 {
                     int cellSize = data.CellSize;
-                    int cellsx = data.Size.X / data.CellSize + ((data.Size.X % data.CellSize != 0) ? 1 : 0);
-                    int cellsy = data.Size.Y / data.CellSize + ((data.Size.Y % data.CellSize != 0) ? 1 : 0);
-                    int cellsz = data.Size.Z / data.CellSize + ((data.Size.Z % data.CellSize != 0) ? 1 : 0);
+                    int cellsx = data.Size.X / data.CellSize + 1;
+                    int cellsy = data.Size.Y / data.CellSize + 1;
+                    int cellsz = data.Size.Z / data.CellSize + 1;
 
                     // TODO: save 4 components: distance, brick id, UV
 

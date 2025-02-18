@@ -17,7 +17,9 @@ namespace SDFTool.Utils
         public const int KTX_R32F = 0x822E;
         public const int KTX_RG32F = 0x8230;
         public const int KTX_R8 = 0x1903;
+        public const int KTX_R8_SNORM = 0x8F94;
         public const int KTX_RGBA8 = 0x8058;
+        public const int KTX_RGBA8_SNORM = 0x8F97;
         public const int KTX_RGB8 = 0x1907;
 
         private const int KTX_FLOAT = 0x1406;

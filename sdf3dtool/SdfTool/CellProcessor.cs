@@ -885,7 +885,7 @@ namespace RunServer.SdfTool
             int cellSize = data.CellSize;
             if (cellSize != 4)
             {
-                throw new Exception("Only cell size 4 is supported at the moment!");
+                throw new Exception("Cell size " + cellSize + " is not supported at the moment!");
             }
 
             Dictionary<Vector3i, ValueTuple<int, float>[]> weightCache = new Dictionary<Vector3i, ValueTuple<int, float>[]>();

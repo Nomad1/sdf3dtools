@@ -211,16 +211,19 @@ const glm::ivec3 &TriangleGrid::getGridSize() const
     return gridSize;
 }
 
-std::vector<std::vector<double>> TriangleGrid::dispatch(const glm::dvec3 &lowerBound, double pixelsToScene, double sceneToPixels,
+std::vector<std::vector<double>> TriangleGrid::dispatch(const glm::dvec3 &lowerBound, double pixelsToScene, int lodCellSize,
                                                         int sx, int sy, int sz, const int quality,
                                                         const uint lods)
 {
     std::vector<std::vector<double>> results;
     results.resize(lods);
 
+    int cellSize = lodCellSize;
 #ifdef CALC_ALL_LODS
     for (size_t l = 0; l < lods; ++l)
     {
+        double sceneToPixels = pixelsToScene / cellSize;
+
         std::cout << timestamp()
                   << "Processing LOD " << (l + 1)
                   << ", size: [" << sx << ", " << sy << ", " << sz << "]"
@@ -255,16 +258,17 @@ std::vector<std::vector<double>> TriangleGrid::dispatch(const glm::dvec3 &lowerB
         sy = sy * 2 - 1;
         sz = sz * 2 - 1;
         pixelsToScene *= 0.5;
-        sceneToPixels *= 2.0;
+        cellSize = (cellSize - 1) * 2 + 1;
     }
 #else
 
     // Process only the last LOD first
-    sx = sx * (1 << (lods - 1)) - ((1 << (lods - 1)) - 1);
-    sy = sy * (1 << (lods - 1)) - ((1 << (lods - 1)) - 1);
-    sz = sz * (1 << (lods - 1)) - ((1 << (lods - 1)) - 1);
-    pixelsToScene *= 1.0 / (1 << (lods - 1));
-    sceneToPixels *= (1 << (lods - 1));
+    int scale = 1 << (lods - 1);
+    sx = sx * scale - (scale - 1);
+    sy = sy * scale - (scale - 1);
+    sz = sz * scale - (scale - 1);
+    cellSize = (lodCellSize - 1) * scale;
+    pixelsToScene /= scale;
 
     // Process highest resolution first (last LOD)
     std::vector<double> &lastLOD = results[lods - 1];
@@ -273,6 +277,7 @@ std::vector<std::vector<double>> TriangleGrid::dispatch(const glm::dvec3 &lowerB
     std::cout << timestamp()
               << "Processing LOD " << (lods)
               << ", size: [" << sx << ", " << sy << ", " << sz << "]"
+              << ", cell size: " << cellSize
               << std::endl;
 
     #pragma omp parallel for schedule(dynamic) collapse(3)
@@ -285,7 +290,7 @@ std::vector<std::vector<double>> TriangleGrid::dispatch(const glm::dvec3 &lowerB
                 int index = (iz * sy * sx + iy * sx + ix) * 4;
                 glm::dvec3 point = lowerBound + glm::dvec3(ix, iy, iz) * pixelsToScene;
                 auto [distance, weights, triangleId] = findTriangles(point, quality);
-                double pixelDistance = distance * sceneToPixels;
+                double pixelDistance = distance / (pixelsToScene * (double)cellSize);
 
                 lastLOD[index] = pixelDistance;
                 lastLOD[index + 1] = weights.x;
@@ -298,8 +303,8 @@ std::vector<std::vector<double>> TriangleGrid::dispatch(const glm::dvec3 &lowerB
     // Calculate lower LODs by downsampling
     for (int l = lods - 2; l >= 0; --l)
     {
-        // double curPixelsToScene = 1.0 / (1 << l);
-        // double curSceneToPixels = 1 << l;
+        int prevCellSize = cellSize;
+        cellSize = cellSize / 2;
 
         int curSX = sx / 2 + 1;
         int curSY = sy / 2 + 1;
@@ -308,6 +313,7 @@ std::vector<std::vector<double>> TriangleGrid::dispatch(const glm::dvec3 &lowerB
         std::cout << timestamp()
                   << "Processing LOD " << (l + 1)
                   << ", size: [" << curSX << ", " << curSY << ", " << curSZ << "]"
+                  << ", cell size: " << cellSize
                   << std::endl;
 
         results[l].resize(curSX * curSY * curSZ * 4);
@@ -322,7 +328,7 @@ std::vector<std::vector<double>> TriangleGrid::dispatch(const glm::dvec3 &lowerB
                     int curIndex = (iz * curSY * curSX + iy * curSX + ix) * 4;
                     int prevIndex = (iz * 2 * sy * sx + iy * 2 * sx + ix * 2) * 4;
 
-                    results[l][curIndex] = results[l + 1][prevIndex] / 2;
+                    results[l][curIndex] = results[l + 1][prevIndex] * (double)cellSize / (double)prevCellSize;
                     results[l][curIndex + 1] = results[l + 1][prevIndex + 1];
                     results[l][curIndex + 2] = results[l + 1][prevIndex + 2];
                     results[l][curIndex + 3] = results[l + 1][prevIndex + 3];
