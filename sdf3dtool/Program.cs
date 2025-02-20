@@ -44,7 +44,7 @@ namespace SDFTool
             
             CellProcessor.ProcessBricksWithLods(data, data.CellSize % 4 == 0 ? 4 : data.CellSize % 3 == 0 ? 3 : data.CellSize, scene != null, out lodData);
 #else
-            CellProcessor.ProcessBricksWithNestedLods(data, data.CellSize, scene != null, out lodData);
+            CellProcessor.ProcessBricksWithNestedLods(data, data.CellSize, scene != null, psnr, out lodData);
 #endif
 
             for (int l = 0; l < lodData.Length; l++)
@@ -197,7 +197,7 @@ namespace SDFTool
 
                     // TODO: save 4 components: distance, brick id, UV
 
-                    var lod0 = new Array3D<ushort>(2, cellsx, cellsy, cellsz);
+                    var lod0 = new Array3D<float>(2, cellsx, cellsy, cellsz);
 
                     for (int iz = 0; iz < cellsz; iz++)
                     {
@@ -207,7 +207,7 @@ namespace SDFTool
                             {
                                 int index = cellSize * (ix + iy * data.Size.X + iz * data.Size.X * data.Size.Y);
 
-                                lod0[ix, iy, iz, 0] = Utils.Utils.PackFloatToUShort(data.Data[index].DistanceUV.X / data.CellSize);
+                                lod0[ix, iy, iz, 0] = (data.Data[index].DistanceUV.X / data.CellSize);
                             }
                         }
                     }
@@ -229,14 +229,14 @@ namespace SDFTool
 
                         dist /= count;
 
-                        lod0[pos.X, pos.Y, pos.Z, 0] = Utils.Utils.PackFloatToUShort(dist / data.CellSize);
-                        lod0[pos.X, pos.Y, pos.Z, 1] = Utils.Utils.PackFloatToUShort(brick.BrickId);
+                        lod0[pos.X, pos.Y, pos.Z, 0] = (dist / data.CellSize);
+                        lod0[pos.X, pos.Y, pos.Z, 1] = (brick.BrickId);
                     }
 
                     MeshGenerator.Surface[] mainBoxesSurface = new MeshGenerator.Surface[] { MeshGenerator.CreateBoxMesh(data.LowerBound, data.UpperBound, default(Matrix4x4), "box", true) };
                     Umesh.SaveUMesh(mainBoxesSurface, outFile + "_lod_0", null, null, scene, matrix);
 
-                    Ktx.SaveKTX(Ktx.KTX_RG16F, lod0, outFile, "_lod_0.3d.ktx");
+                    Ktx.SaveKTX(Ktx.KTX_RG32F, lod0, outFile, "_lod_0.3d.ktx");
                 }
             }
         }

@@ -225,7 +225,7 @@ std::vector<std::vector<double>> TriangleGrid::dispatch(const glm::dvec3 &lowerB
     for (size_t l = 0; l < lods; ++l)
     {
         double currentPixelsToScene = pixelsToScene / (lowerLodPixels * (1 << l));
-        double currentSearchWindow = 1.0 / ((std::max({sx,sy,sz}) / cellSize));
+        double currentSearchWindow = pixelsToScene / ((std::max({sx,sy,sz}) / cellSize));
 
         size_t maxIndex = getMaxSearchIndex(currentSearchWindow);
 
@@ -272,7 +272,7 @@ std::vector<std::vector<double>> TriangleGrid::dispatch(const glm::dvec3 &lowerB
     sy = sy * scale - (scale - 1);
     sz = sz * scale - (scale - 1);
     double currentPixelsToScene = pixelsToScene / (lowerLodPixels * scale);
-    double currentSearchWindow = 1.0 / ((std::max({sx,sy,sz}) / cellSize));
+    double currentSearchWindow = pixelsToScene / ((std::max({sx,sy,sz}) / cellSize));
 
     // Process highest resolution first (last LOD)
     std::vector<double> &lastLOD = results[lods - 1];
@@ -487,7 +487,6 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::dvec3 &
     glm::dvec3 resultNormal;
 
     double minDistanceSqrd = std::numeric_limits<double>::infinity();
-    const PreparedTriangle *resultTriangle = nullptr;
     int resultCode = -1;
 
     // Convert point to grid coordinates
@@ -573,8 +572,6 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::dvec3 &
 
                     lb = point - glm::dvec3(result.distance);
                     ub = point + glm::dvec3(result.distance);
-
-                    resultTriangle = &triangle;
 
                     resultPoint = closestPoint;
                     resultNormal = normal;

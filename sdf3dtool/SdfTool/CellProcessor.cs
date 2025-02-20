@@ -535,6 +535,29 @@ namespace RunServer.SdfTool
             return usedCells;
         }
 
+        private static bool BricksAreSimilar(PixelData[] cellData, PixelData[] enlargedCellData, double minPsnr, double multiplier = 1.0f)
+        {
+            // Check array sizes match
+            if (cellData.Length != enlargedCellData.Length)
+                return false;
+
+            double mse = 0;
+            for (int i = 0; i < cellData.Length; i++)
+            {
+                double diff = (1.0 / cellData[i].DistanceUV.X - 1.0 / enlargedCellData[i].DistanceUV.X) * multiplier;
+                mse += diff * diff;
+            }
+
+            mse /= cellData.Length;
+
+            // Handle perfect match case
+            if (Math.Abs(mse) < double.Epsilon)
+                return true;
+
+            double psnr = 10.0 * Math.Log10(1.0 / mse);
+            return psnr > minPsnr;
+        }
+
         /// <summary>
         /// This method analyzes the pixel data and tries to find biggest possible bricks with some quality loss
         /// </summary>
@@ -670,21 +693,7 @@ namespace RunServer.SdfTool
                                 PixelData[] reducedCellData = GenerateLod(cellData, cellSize + 1, minCellSize + 1);
                                 PixelData[] enlargedCellData = GenerateLod(reducedCellData, minCellSize + 1, cellSize + 1);
 
-
-                                float mse = 0;
-
-                                for (int i = 0; i < cellData.Length; i++)
-                                {
-                                    float diff = Math.Abs(cellData[i].DistanceUV.X - enlargedCellData[i].DistanceUV.X);
-
-                                    mse += diff * diff;
-                                }
-
-                                mse /= cellData.Length;
-
-                                float psnr = (float)(10.0 * Math.Log10(1.0 / mse));
-
-                                if (psnr < minPsnr)
+                                if (BricksAreSimilar(cellData, enlargedCellData, minPsnr))
                                     continue;
 
                                 brick = reducedCellData;
@@ -878,7 +887,7 @@ namespace RunServer.SdfTool
             DistanceData data,
             int baseCellSize,
             bool processWeights,
-
+            float minPsnr,
             out LodData[] lods
             )
         {
@@ -949,6 +958,38 @@ namespace RunServer.SdfTool
                                 if (newBrick == null)
                                     continue;
 
+                                int cs = cellSize + 1;
+
+                                // Get corners of 3D cube (x,y,z coordinates)
+                                PixelData[] reducedCellData =
+                                {
+                                    // Origin corner (0,0,0)
+                                    newBrick[0],
+                                    // Corner (0,cs-1,0)
+                                    newBrick[(cs-1)],
+                                    // Corner (cs-1,0,0)  
+                                    newBrick[(cs-1) * cs],
+                                    // Corner (cs-1,cs-1,0)
+                                    newBrick[(cs-1) + (cs-1) * cs],
+                                    // Corner (0,0,cs-1)
+                                    newBrick[(cs-1) * cs * cs],
+                                    // Corner (0,cs-1,cs-1)
+                                    newBrick[(cs-1) + (cs-1) * cs * cs],
+                                    // Corner (cs-1,0,cs-1)
+                                    newBrick[(cs-1) * cs + (cs-1) * cs * cs],
+                                    // Corner (cs-1,cs-1,cs-1)
+                                    newBrick[(cs-1) + (cs-1) * cs + (cs-1) * cs * cs]
+                                };
+
+                                PixelData[] enlargedCellData = GenerateLod(reducedCellData, 2, cs);
+
+                                if (BricksAreSimilar(newBrick, enlargedCellData, minPsnr, (1 << (lod - 1)) / (double)Math.Max(Math.Max(cellsx,cellsy),cellsz))) // there is no reason to use more detailed brick here
+                                {
+                                    brick.Children[x + y * (cellSize + 1) + z * (cellSize + 1) * (cellSize + 1)] = 0xffffff;
+                                    readyBricks[index] = 0xffffff;
+                                    continue;
+                                }
+
                                 int id = ++totalBricks;
                                 resultBricks[lod].Add(new BrickData(id, brickPos, cellSize, newBrick, new int[(cellSize + 1) * (cellSize + 1) * (cellSize + 1)]));
 
@@ -967,7 +1008,7 @@ namespace RunServer.SdfTool
             int packx;
             int packy;
             int packz;
-            FindBestDividers(allBricks.Count, out packx, out packy, out packz, 256);
+            FindBestDividers(allBricks.Count + 1, out packx, out packy, out packz, 256);
             Vector3i pack = new Vector3i(packx, packy, packz);
 
             Vector3 boxStep = (data.UpperBound - data.LowerBound) / (new Vector3(cellsx, cellsy, cellsz) * baseCellSize);
