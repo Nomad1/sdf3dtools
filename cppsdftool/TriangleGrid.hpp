@@ -45,7 +45,7 @@ public:
      * @param lods Number of LOD (level of detail) levels to generate
      * @return Vector of vectors containing signed distance values for each LOD level
      */
-    std::vector<std::vector<double>> dispatch(const glm::dvec3 &lowerBound, double pixelsToScene, int lowerLodPixels,
+    std::vector<std::vector<double>> dispatch(const glm::dvec3 &lowerBound, double pixelsToScene, int lowerLodPixels, const int cellSize,
                                               int sx, int sy, int sz, const int quality,
                                               const uint lods);
 
@@ -53,7 +53,7 @@ public:
     const glm::ivec3 &getGridSize() const;
 
 private:
-    FindTrianglesResult findTriangles(const glm::dvec3 &point, const int quality);
+    FindTrianglesResult findTriangles(const glm::dvec3 &point, const int quality, const size_t maxIndex);
 
     using GridCell = std::unique_ptr<std::vector<PreparedTriangle>>;
 
@@ -62,6 +62,7 @@ private:
     int countIntersections(const glm::dvec3 &point, const glm::dvec3 &dir);
     void generateOrderedOffsets();
     void generateRandomDirections();
+    size_t getMaxSearchIndex(const double searchWindow);
 
     glm::dvec3 sceneMin;
     glm::dvec3 sceneMax;

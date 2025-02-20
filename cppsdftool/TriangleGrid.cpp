@@ -4,6 +4,8 @@
 
 #include <iostream>
 
+#define CALC_ALL_LODS
+
 namespace
 {
     // Pre-computed immediate neighbor offsets (26 adjacent cells)
@@ -212,6 +214,7 @@ const glm::ivec3 &TriangleGrid::getGridSize() const
 }
 
 std::vector<std::vector<double>> TriangleGrid::dispatch(const glm::dvec3 &lowerBound, double pixelsToScene, int lowerLodPixels,
+                                                        const int cellSize,
                                                         int sx, int sy, int sz, const int quality,
                                                         const uint lods)
 {
@@ -221,11 +224,15 @@ std::vector<std::vector<double>> TriangleGrid::dispatch(const glm::dvec3 &lowerB
 #ifdef CALC_ALL_LODS
     for (size_t l = 0; l < lods; ++l)
     {
-        double sceneToPixels = pixelsToScene / lowerLodPixels;
+        double currentPixelsToScene = pixelsToScene / (lowerLodPixels * (1 << l));
+        double currentSearchWindow = 1.0 / ((std::max({sx,sy,sz}) / cellSize));
+
+        size_t maxIndex = getMaxSearchIndex(currentSearchWindow);
 
         std::cout << timestamp()
                   << "Processing LOD " << (l + 1)
                   << ", size: [" << sx << ", " << sy << ", " << sz << "]"
+                  << ", search window is " << currentSearchWindow << ", maxIndex " << maxIndex
                   << std::endl;
 
         std::vector<double> &result = results[l];
@@ -240,9 +247,9 @@ std::vector<std::vector<double>> TriangleGrid::dispatch(const glm::dvec3 &lowerB
                 {
                     int index = (iz * sy * sx + iy * sx + ix) * 4;
 
-                    glm::dvec3 point = lowerBound + glm::dvec3(ix, iy, iz) * pixelsToScene;
-                    auto [distance, weights, triangleId] = findTriangles(point, quality);
-                    double pixelDistance = distance * sceneToPixels;
+                    glm::dvec3 point = lowerBound + glm::dvec3(ix, iy, iz) * currentPixelsToScene;
+                    auto [distance, weights, triangleId] = findTriangles(point, quality, maxIndex);
+                    double pixelDistance = distance / currentPixelsToScene;
 
                     // Store results in a thread-safe manner
                     result[index] = pixelDistance;
@@ -256,8 +263,6 @@ std::vector<std::vector<double>> TriangleGrid::dispatch(const glm::dvec3 &lowerB
         sx = sx * 2 - 1;
         sy = sy * 2 - 1;
         sz = sz * 2 - 1;
-        pixelsToScene *= 0.5;
-        cellSize = (cellSize - 1) * 2 + 1;
     }
 #else
 
@@ -267,14 +272,18 @@ std::vector<std::vector<double>> TriangleGrid::dispatch(const glm::dvec3 &lowerB
     sy = sy * scale - (scale - 1);
     sz = sz * scale - (scale - 1);
     double currentPixelsToScene = pixelsToScene / (lowerLodPixels * scale);
+    double currentSearchWindow = 1.0 / ((std::max({sx,sy,sz}) / cellSize));
 
     // Process highest resolution first (last LOD)
     std::vector<double> &lastLOD = results[lods - 1];
     lastLOD.resize(sx * sy * sz * 4);
 
+    size_t maxIndex = getMaxSearchIndex(currentSearchWindow);
+
     std::cout << timestamp()
               << "Processing LOD " << (lods)
               << ", size: [" << sx << ", " << sy << ", " << sz << "]"
+              << ", search window is " << currentSearchWindow << ", maxIndex " << maxIndex
               << std::endl;
 
     #pragma omp parallel for schedule(dynamic) collapse(3)
@@ -286,7 +295,7 @@ std::vector<std::vector<double>> TriangleGrid::dispatch(const glm::dvec3 &lowerB
             {
                 int index = (iz * sy * sx + iy * sx + ix) * 4;
                 glm::dvec3 point = lowerBound + glm::dvec3(ix, iy, iz) * currentPixelsToScene;
-                auto [distance, weights, triangleId] = findTriangles(point, quality);
+                auto [distance, weights, triangleId] = findTriangles(point, quality, maxIndex);
                 double pixelDistance = distance / currentPixelsToScene;// / (pixelsToScene * (double)cellSize);
 
                 lastLOD[index + 0] = pixelDistance;
@@ -446,7 +455,28 @@ bool TriangleGrid::processRay(const glm::dvec3 &fromPoint, const glm::dvec3 &dir
     return false;
 }
 
-TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::dvec3 &point, const int quality)
+size_t TriangleGrid::getMaxSearchIndex(const double searchWindow)
+{
+    size_t maxIndex = cellOffsetLengths.size() - 1;
+
+    double maxSearchWindow = searchWindow / gridStep + std::sqrt(3.0) / 2.0;
+
+    std::cout << timestamp()
+              << "Max search window in grid units: "
+              << maxSearchWindow
+              << std::endl;
+
+    for (size_t i = 0; i < maxIndex; ++i)
+        if (cellOffsetLengths[i] > maxSearchWindow)
+        {
+            maxIndex = i;
+            break;
+        }
+
+    return maxIndex;
+}
+
+TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::dvec3 &point, const int quality, const size_t maxIndex)
 {
     FindTrianglesResult result;
     result.distance = std::numeric_limits<double>::infinity();
@@ -494,14 +524,20 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::dvec3 &
 
         size_t index = idot(p, gridIndex);
 
+        // TODO: when the grid cell is small enough, the next triangle could be in many cells beyond the current
+        // we need to determine how many cells we can read from cellOffsetLengths before stopping early
+        // it's 27 for 3x3x3 cube, meaning that element 28 is guaranteed to be at least 1 cell length away 
+        #ifndef EARLY_EXIT
+        
         // Early exit for isolated points
-        if (i >= 27 && std::isinf(localDist))
+        if (i >= maxIndex && std::isinf(localDist))
         {
             earlyExit = true;
             result.distance = cellOffsetLengths[i] * gridStep;
             resultPoint = sceneMin + (glm::dvec3(ipoint) + 0.5) * gridStep;
             break;
         }
+        #endif
 
         if (!grid[index])
             continue;
@@ -546,18 +582,16 @@ TriangleGrid::FindTrianglesResult TriangleGrid::findTriangles(const glm::dvec3 &
 
                     result.weights = weights;
                     result.triangleId = triangle.getId();
+
+                    localDist = result.distance / gridStep+ std::sqrt(3.0) / 2.0;
                 }
             }
         }
 
-        if (!std::isinf(result.distance))
-        {
-            localDist = result.distance / gridStep +
-                        std::sqrt(3.0) / 2.0;
-        }
-
-        if (earlyExit)
-            break;
+        // if (!std::isinf(result.distance))
+        // {
+        //     localDist = result.distance / gridStep + std::sqrt(3.0) / 2.0;
+        // }
     }
 
     // Determine sign using ray casting

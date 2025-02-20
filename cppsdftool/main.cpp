@@ -13,8 +13,6 @@ struct ProcessingMetadata
     glm::ivec3 gridDimensions;
     glm::dvec3 sceneMin;
     glm::dvec3 sceneMax;
-    double sceneToPixels;
-    double pixelsToScene;
     size_t triangleCount;
 };
 
@@ -350,8 +348,9 @@ ProcessingMetadata processModel(const std::string &filename, const std::string &
     // Generate distance field
     std::vector<std::vector<double>> distanceData = triangleGrid.dispatch(
         lowerBound,
-        pixelsToScene * pixels,
+        maxSide,
         pixels,
+        topLodCellSize,
         sx, sy, sz, quality, lod);
 
     std::cout << timestamp()
@@ -409,8 +408,6 @@ ProcessingMetadata processModel(const std::string &filename, const std::string &
         glm::ivec3(sx, sy, sz),
         sceneMin,
         sceneMax,
-        sceneToPixels,
-        pixelsToScene,
         triangles.size()};
 }
 
