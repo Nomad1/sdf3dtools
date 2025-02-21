@@ -213,56 +213,88 @@ const glm::ivec3 &TriangleGrid::getGridSize() const
     return gridSize;
 }
 
-std::vector<std::vector<double>> TriangleGrid::dispatch(const glm::dvec3 &lowerBound, double pixelsToScene, int lowerLodPixels,
-                                                        const int cellSize,
-                                                        int sx, int sy, int sz, const int quality,
+std::string formatBytes(size_t bytes) {
+    std::string result = std::to_string(bytes);
+    for (int i = result.length() - 3; i > 0; i -= 3) {
+        result.insert(i, " ");
+    }
+    return result;
+}
+
+std::vector<std::vector<float>> TriangleGrid::dispatch(const glm::dvec3 &lowerBound,
+                                                        const double pixelsToScene, const int lowerLodPixels, const int cellSize,
+                                                        const int sx, const int sy, const int sz, const int quality,
                                                         const uint lods)
 {
-    std::vector<std::vector<double>> results;
+    std::vector<std::vector<float>> results;
     results.resize(lods);
+
+    int curSX = sx;
+    int curSY = sy;
+    int curSZ = sz;
+
+    // allocate all the vectors to creash early
+    for (size_t l = 0; l < lods; ++l)
+    {
+        std::vector<float> &result = results[l];
+        size_t size = (size_t)curSX * (size_t)curSY * (size_t)curSZ * 3;
+
+        std::cout << timestamp()
+                  << "Allocating " << formatBytes(size * 4) << " bytes for LOD "<< l + 1
+                  << std::endl;
+
+        result.resize(size);
+
+        curSX = curSX * 2 - 1;
+        curSY = curSY * 2 - 1;
+        curSZ = curSZ * 2 - 1;
+    }
+
+    curSX = sx;
+    curSY = sy;
+    curSZ = sz;
 
 #ifdef CALC_ALL_LODS
     for (size_t l = 0; l < lods; ++l)
     {
         double currentPixelsToScene = pixelsToScene / (lowerLodPixels * (1 << l));
-        double currentSearchWindow = pixelsToScene / ((std::max({sx,sy,sz}) / cellSize));
+        double currentSearchWindow = pixelsToScene / ((std::max({curSX,curSY,curSZ}) / cellSize));
 
         size_t maxIndex = getMaxSearchIndex(currentSearchWindow);
 
         std::cout << timestamp()
                   << "Processing LOD " << (l + 1)
-                  << ", size: [" << sx << ", " << sy << ", " << sz << "]"
+                  << ", size: [" << curSX << ", " << curSY << ", " << curSZ << "]"
                   << ", search window is " << currentSearchWindow << ", maxIndex " << maxIndex
                   << std::endl;
 
-        std::vector<double> &result = results[l];
-        result.resize(sx * sy * sz * 4);
+        std::vector<float> &result = results[l];
 
         #pragma omp parallel for schedule(dynamic) collapse(3)
-        for (int iz = 0; iz < sz; ++iz)
+        for (int iz = 0; iz < curSZ; ++iz)
         {
-            for (int iy = 0; iy < sy; ++iy)
+            for (int iy = 0; iy < curSY; ++iy)
             {
-                for (int ix = 0; ix < sx; ++ix)
+                for (int ix = 0; ix < curSX; ++ix)
                 {
-                    int index = (iz * sy * sx + iy * sx + ix) * 4;
+                    int index = (iz * curSY * curSX + iy * curSX + ix) * 3;
 
                     glm::dvec3 point = lowerBound + glm::dvec3(ix, iy, iz) * currentPixelsToScene;
                     auto [distance, weights, triangleId] = findTriangles(point, quality, maxIndex);
-                    double pixelDistance = distance / currentPixelsToScene;
+                    float pixelDistance = distance / currentPixelsToScene;
 
                     // Store results in a thread-safe manner
                     result[index] = pixelDistance;
-                    result[index + 1] = weights.x;
-                    result[index + 2] = weights.y;
-                    result[index + 3] = static_cast<double>(triangleId);
+                    result[index + 1] = static_cast<float>(weights.x);
+                    result[index + 2] = static_cast<float>(weights.y);
+                    //result[index + 3] = static_cast<float>(triangleId);
                 }
             }
         }
 
-        sx = sx * 2 - 1;
-        sy = sy * 2 - 1;
-        sz = sz * 2 - 1;
+        curSX = curSX * 2 - 1;
+        curSY = curSY * 2 - 1;
+        curSZ = curSZ * 2 - 1;
     }
 #else
 
@@ -275,8 +307,7 @@ std::vector<std::vector<double>> TriangleGrid::dispatch(const glm::dvec3 &lowerB
     double currentSearchWindow = pixelsToScene / ((std::max({sx,sy,sz}) / cellSize));
 
     // Process highest resolution first (last LOD)
-    std::vector<double> &lastLOD = results[lods - 1];
-    lastLOD.resize(sx * sy * sz * 4);
+    std::vector<float> &lastLOD = results[lods - 1];
 
     size_t maxIndex = getMaxSearchIndex(currentSearchWindow);
 
@@ -293,15 +324,15 @@ std::vector<std::vector<double>> TriangleGrid::dispatch(const glm::dvec3 &lowerB
         {
             for (int ix = 0; ix < sx; ++ix)
             {
-                int index = (iz * sy * sx + iy * sx + ix) * 4;
+                int index = (iz * sy * sx + iy * sx + ix) * 3;
                 glm::dvec3 point = lowerBound + glm::dvec3(ix, iy, iz) * currentPixelsToScene;
                 auto [distance, weights, triangleId] = findTriangles(point, quality, maxIndex);
-                double pixelDistance = distance / currentPixelsToScene;// / (pixelsToScene * (double)cellSize);
+                float pixelDistance = distance / currentPixelsToScene;// / (pixelsToScene * (double)cellSize);
 
                 lastLOD[index + 0] = pixelDistance;
                 lastLOD[index + 1] = weights.x;
                 lastLOD[index + 2] = weights.y;
-                lastLOD[index + 3] = static_cast<double>(triangleId);
+                //lastLOD[index + 3] = static_cast<float>(triangleId);
             }
         }
     }
@@ -320,8 +351,6 @@ std::vector<std::vector<double>> TriangleGrid::dispatch(const glm::dvec3 &lowerB
                   << ", size: [" << curSX << ", " << curSY << ", " << curSZ << "]"
                   << std::endl;
 
-        results[l].resize(curSX * curSY * curSZ * 4);
-
         #pragma omp parallel for collapse(3)
         for (int iz = 0; iz < curSZ; ++iz)
         {
@@ -329,13 +358,13 @@ std::vector<std::vector<double>> TriangleGrid::dispatch(const glm::dvec3 &lowerB
             {
                 for (int ix = 0; ix < curSX; ++ix)
                 {
-                    int curIndex = (iz * curSY * curSX + iy * curSX + ix) * 4;
-                    int prevIndex = (iz * 2 * sy * sx + iy * 2 * sx + ix * 2) * 4;
+                    int curIndex = (iz * curSY * curSX + iy * curSX + ix) * 3;
+                    int prevIndex = (iz * 2 * sy * sx + iy * 2 * sx + ix * 2) * 3;
 
                     results[l][curIndex + 0] = results[l + 1][prevIndex + 0] * currentPixelsToScene / nextPixelsToScene;// * (double)cellSize / (double)prevCellSize;
                     results[l][curIndex + 1] = results[l + 1][prevIndex + 1];
                     results[l][curIndex + 2] = results[l + 1][prevIndex + 2];
-                    results[l][curIndex + 3] = results[l + 1][prevIndex + 3];
+                    //results[l][curIndex + 3] = results[l + 1][prevIndex + 3];
                 }
             }
         }
@@ -461,10 +490,10 @@ size_t TriangleGrid::getMaxSearchIndex(const double searchWindow)
 
     double maxSearchWindow = searchWindow / gridStep + std::sqrt(3.0) / 2.0;
 
-    std::cout << timestamp()
-              << "Max search window in grid units: "
-              << maxSearchWindow
-              << std::endl;
+    // std::cout << timestamp()
+    //           << "Max search window in grid units: "
+    //           << maxSearchWindow
+    //           << std::endl;
 
     for (size_t i = 0; i < maxIndex; ++i)
         if (cellOffsetLengths[i] > maxSearchWindow)

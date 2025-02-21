@@ -45,9 +45,10 @@ public:
      * @param lods Number of LOD (level of detail) levels to generate
      * @return Vector of vectors containing signed distance values for each LOD level
      */
-    std::vector<std::vector<double>> dispatch(const glm::dvec3 &lowerBound, double pixelsToScene, int lowerLodPixels, const int cellSize,
-                                              int sx, int sy, int sz, const int quality,
-                                              const uint lods);
+    std::vector<std::vector<float>> dispatch(const glm::dvec3 &lowerBound,
+                                                const double pixelsToScene, const int lowerLodPixels, const int cellSize,
+                                                const int sx, const int sy, const int sz, const int quality,
+                                                const uint lods);
 
     int getTriangleCount() const;
     const glm::ivec3 &getGridSize() const;

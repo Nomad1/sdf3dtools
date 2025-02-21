@@ -346,7 +346,7 @@ ProcessingMetadata processModel(const std::string &filename, const std::string &
               << std::endl;
 
     // Generate distance field
-    std::vector<std::vector<double>> distanceData = triangleGrid.dispatch(
+    std::vector<std::vector<float>> distanceData = triangleGrid.dispatch(
         lowerBound,
         maxSide,
         pixels,
@@ -369,7 +369,7 @@ ProcessingMetadata processModel(const std::string &filename, const std::string &
         if (distanceData.size() == 1)
         {
             std::vector<float> floatData(distanceData[0].begin(), distanceData[0].end());
-            saveKTX(KTX_R32F, (uint)sx, (uint)sy, (uint)sz, floatData, outputFile, 4);
+            saveKTX(KTX_R32F, (uint)sx, (uint)sy, (uint)sz, floatData, outputFile, 3);
         }
         else
         {
