@@ -4,7 +4,7 @@
 
 #include <iostream>
 
-#define CALC_ALL_LODS
+//#define CALC_ALL_LODS
 
 namespace
 {
@@ -236,6 +236,11 @@ std::vector<std::vector<float>> TriangleGrid::dispatch(const glm::dvec3 &lowerBo
     // allocate all the vectors to creash early
     for (size_t l = 0; l < lods; ++l)
     {
+        int scale = 1 << l;
+        curSX = sx * scale - (scale - 1);
+        curSY = sy * scale - (scale - 1);
+        curSZ = sz * scale - (scale - 1);
+
         std::vector<float> &result = results[l];
         size_t size = (size_t)curSX * (size_t)curSY * (size_t)curSZ * 3;
 
@@ -244,17 +249,13 @@ std::vector<std::vector<float>> TriangleGrid::dispatch(const glm::dvec3 &lowerBo
                   << std::endl;
 
         result.resize(size);
-
-        curSX = curSX * 2 - 1;
-        curSY = curSY * 2 - 1;
-        curSZ = curSZ * 2 - 1;
     }
 
+#ifdef CALC_ALL_LODS
     curSX = sx;
     curSY = sy;
     curSZ = sz;
 
-#ifdef CALC_ALL_LODS
     for (size_t l = 0; l < lods; ++l)
     {
         double currentPixelsToScene = pixelsToScene / (lowerLodPixels * (1 << l));
@@ -300,11 +301,11 @@ std::vector<std::vector<float>> TriangleGrid::dispatch(const glm::dvec3 &lowerBo
 
     // Process only the last LOD first
     int scale = 1 << (lods - 1);
-    sx = sx * scale - (scale - 1);
-    sy = sy * scale - (scale - 1);
-    sz = sz * scale - (scale - 1);
+    curSX = sx * scale - (scale - 1);
+    curSY = sy * scale - (scale - 1);
+    curSZ = sz * scale - (scale - 1);
     double currentPixelsToScene = pixelsToScene / (lowerLodPixels * scale);
-    double currentSearchWindow = pixelsToScene / ((std::max({sx,sy,sz}) / cellSize));
+    double currentSearchWindow = pixelsToScene / ((std::max({curSX,curSY,curSZ}) / cellSize));
 
     // Process highest resolution first (last LOD)
     std::vector<float> &lastLOD = results[lods - 1];
@@ -313,18 +314,18 @@ std::vector<std::vector<float>> TriangleGrid::dispatch(const glm::dvec3 &lowerBo
 
     std::cout << timestamp()
               << "Processing LOD " << (lods)
-              << ", size: [" << sx << ", " << sy << ", " << sz << "]"
+              << ", size: [" << curSX << ", " << curSY << ", " << curSZ << "]"
               << ", search window is " << currentSearchWindow << ", maxIndex " << maxIndex
               << std::endl;
 
     #pragma omp parallel for schedule(dynamic) collapse(3)
-    for (int iz = 0; iz < sz; ++iz)
+    for (int iz = 0; iz < curSZ; ++iz)
     {
-        for (int iy = 0; iy < sy; ++iy)
+        for (int iy = 0; iy < curSY; ++iy)
         {
-            for (int ix = 0; ix < sx; ++ix)
+            for (int ix = 0; ix < curSX; ++ix)
             {
-                int index = (iz * sy * sx + iy * sx + ix) * 3;
+                int index = (iz * curSX * curSY + iy * curSX + ix) * 3;
                 glm::dvec3 point = lowerBound + glm::dvec3(ix, iy, iz) * currentPixelsToScene;
                 auto [distance, weights, triangleId] = findTriangles(point, quality, maxIndex);
                 float pixelDistance = distance / currentPixelsToScene;// / (pixelsToScene * (double)cellSize);
@@ -337,14 +338,19 @@ std::vector<std::vector<float>> TriangleGrid::dispatch(const glm::dvec3 &lowerBo
         }
     }
 
+    int prevSX = curSX;
+    int prevSY = curSY;
+    int prevSZ = curSZ;
     // Calculate lower LODs by downsampling
     for (int l = lods - 2; l >= 0; --l)
     {
-        int curSX = sx / 2 + 1;
-        int curSY = sy / 2 + 1;
-        int curSZ = sz / 2 + 1;
+        int scale = 1 << l;
+        curSX = sx * scale - (scale - 1);
+        curSY = sy * scale - (scale - 1);
+        curSZ = sz * scale - (scale - 1);
 
-        double nextPixelsToScene = pixelsToScene / (lowerLodPixels * (1 << l));
+        float nextPixelsToScene = pixelsToScene / (lowerLodPixels * scale);
+        float recalcDistance = currentPixelsToScene / nextPixelsToScene;
 
         std::cout << timestamp()
                   << "Processing LOD " << (l + 1)
@@ -359,20 +365,48 @@ std::vector<std::vector<float>> TriangleGrid::dispatch(const glm::dvec3 &lowerBo
                 for (int ix = 0; ix < curSX; ++ix)
                 {
                     int curIndex = (iz * curSY * curSX + iy * curSX + ix) * 3;
-                    int prevIndex = (iz * 2 * sy * sx + iy * 2 * sx + ix * 2) * 3;
 
-                    results[l][curIndex + 0] = results[l + 1][prevIndex + 0] * currentPixelsToScene / nextPixelsToScene;// * (double)cellSize / (double)prevCellSize;
-                    results[l][curIndex + 1] = results[l + 1][prevIndex + 1];
-                    results[l][curIndex + 2] = results[l + 1][prevIndex + 2];
-                    //results[l][curIndex + 3] = results[l + 1][prevIndex + 3];
+                     // Variables to store the sums of the 8 pixels
+                    float sumValue0 = 0.0f;
+                    float sumValue1 = 0.0f;
+                    float sumValue2 = 0.0f;
+                    int validPixelCount = 0;
+
+                    // Base coordinate in the previous level
+                    int fromZ = iz * 2;
+                    int fromY = iy * 2;
+                    int fromX = ix * 2;
+
+                    int toZ = std::min(fromZ + 2, prevSZ);
+                    int toY = std::min(fromY + 2, prevSY);
+                    int toX = std::min(fromX + 2, prevSX);
+
+                    // Accumulate values from all 8 neighboring pixels
+                    for(int pz = fromZ; pz < toZ; ++pz)
+                    for(int py = fromY; py < toY; ++py)
+                    for(int px = fromX; px < toX; ++px)
+                    {
+                        int index = (pz * prevSY * prevSX + py * prevSX + px) * 3;
+
+                        sumValue0 += results[l + 1][index + 0];
+                        sumValue1 += results[l + 1][index + 1];
+                        sumValue2 += results[l + 1][index + 2];
+                        validPixelCount++;
+                    }
+
+                    float pixelCoef = validPixelCount == 0 ? 0.0f : 1.0f / validPixelCount;
+
+                    results[l][curIndex + 0] = sumValue0 * pixelCoef * recalcDistance;
+                    results[l][curIndex + 1] = sumValue1 * pixelCoef;
+                    results[l][curIndex + 2] = sumValue2 * pixelCoef;
                 }
             }
         }
 
-        sx = curSX;
-        sy = curSY;
-        sz = curSZ;
         currentPixelsToScene = nextPixelsToScene;
+        prevSX = curSX;
+        prevSY = curSY;
+        prevSZ = curSZ;
     }
 
 #endif
