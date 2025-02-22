@@ -38,13 +38,13 @@ namespace SDFTool
 
 #if SINGLE_LOD
             lodData = new CellProcessor.LodData[1];
-            CellProcessor.ProcessBricks(data, psnr, out lodData[0]);
+            Bricks.ProcessBricks(data, psnr, out lodData[0]);
 #elif OLD_LODS
             // find non-empty cells
             
-            CellProcessor.ProcessBricksWithLods(data, data.CellSize % 4 == 0 ? 4 : data.CellSize % 3 == 0 ? 3 : data.CellSize, scene != null, out lodData);
+            Lods.ProcessBricksWithLods(data, data.CellSize % 4 == 0 ? 4 : data.CellSize % 3 == 0 ? 3 : data.CellSize, scene != null, out lodData);
 #else
-            CellProcessor.ProcessBricksWithNestedLods(data, data.CellSize, scene != null, psnr, out lodData);
+            NestedLods.ProcessBricksWithNestedLods(data, data.CellSize, scene != null, psnr, out lodData);
 #endif
 
             for (int l = 0; l < lodData.Length; l++)

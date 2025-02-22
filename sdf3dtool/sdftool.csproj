@@ -46,7 +46,6 @@
     <Compile Include="PreparedTriangle.cs" />
     <Compile Include="TriangleGrid.cs" />
     <Compile Include="MeshGenerator.cs" />
-    <Compile Include="SdfTool\CellProcessor.cs" />
     <Compile Include="SdfTool\Vector3i.cs" />
     <Compile Include="SdfTool\Vector4i.cs" />
     <Compile Include="SdfTool\Vector2e.cs" />
@@ -62,11 +61,18 @@
     <Compile Include="Utils\Array2D.cs" />
     <Compile Include="Utils\Array3D.cs" />
     <Compile Include="Utils\Bitmap.cs" />
+    <Compile Include="SdfTool\DistanceData.cs" />
+    <Compile Include="SdfTool\CellProcessor\Bricks.cs" />
+    <Compile Include="SdfTool\CellProcessor\Utils.cs" />
+    <Compile Include="SdfTool\CellProcessor\NestedLods.cs" />
+    <Compile Include="SdfTool\CellProcessor\Lods.cs" />
+    <Compile Include="SdfTool\CellProcessor\CellProcessor.cs" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Properties\" />
     <Folder Include="SdfTool\" />
     <Folder Include="Utils\" />
+    <Folder Include="SdfTool\CellProcessor\" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\..\Projects.3rd\assimpnet\AssimpNet\AssimpNet.csproj">
