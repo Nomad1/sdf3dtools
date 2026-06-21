@@ -6,6 +6,10 @@ using static RunServer.SdfTool.Utils;
 
 namespace RunServer.SdfTool
 {
+    /// <summary>
+    /// That's very first version of the cell processing class. It has been updated to use the newer methods but never actually tested
+    /// and it's not used anymore
+    /// </summary>
     public static class Cells
     {
         /// <summary>
